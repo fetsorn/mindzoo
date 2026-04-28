@@ -26,21 +26,19 @@ export function nameMind(mind, name) {
  * @param {String} name -
  */
 export async function gitinit(fs, mind, name) {
-  const dir = nameMind(mind, name);
+  let existingMind;
 
-  if (mind !== "root") {
-    try {
-      const existingMind = await findMind(fs, mind);
-
-      if (existingMind !== dir) {
-        await fs.promises.rename(existingMind, dir);
-      }
-
-      return;
-    } catch {
-      // if no mind found, proceed to create it
-    }
+  try {
+    existingMind = await findMind(fs, mind);
+  } catch {
+    // do nothing
   }
+
+  if (existingMind !== undefined) {
+    throw Error("mind already exists");
+  }
+
+  const dir = nameMind(mind, name);
 
   await fs.promises.mkdir(dir);
 
@@ -139,12 +137,12 @@ export async function commit(fs, mind) {
  * @param {String} source -
  * @param {String} target -
  */
-export async function rename(fs, mind, source) {
+export async function rename(fs, mind, name) {
   // should be a recursive copy,
   // but don't want to implement it
-  const existingMind = await findMind(fs, source);
+  const existingMind = await findMind(fs, mind);
 
-  const dir = nameMind(mind);
+  const dir = nameMind(mind, name);
 
   await fs.promises.rename(existingMind, dir);
 
