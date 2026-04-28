@@ -1,0 +1,37 @@
+import { dirname, resolve } from "path";
+import { fileURLToPath } from "url";
+import { defineConfig } from "vite";
+import { webdriverio } from "@vitest/browser-webdriverio";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+export default defineConfig({
+    build: {
+        lib: {
+            entry: resolve(__dirname, "src/index.js"),
+            formats: ["es"],
+            fileName: "mindzoo",
+        },
+        sourcemap: "inline",
+    },
+    test: {
+        include: ["./src/test/*.test.js"],
+        setupFiles: ["./src/test/setup.js"],
+        coverage: {
+            provider: "istanbul",
+            coverage: {
+                reporter: ["text", "json", "html"],
+            },
+        },
+        browser: {
+            provider: webdriverio(),
+            enabled: true,
+            instances: [
+                {
+                    browser: "firefox",
+                },
+            ],
+        },
+    },
+});

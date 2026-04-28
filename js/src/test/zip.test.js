@@ -1,0 +1,64 @@
+import { expect, test, describe, beforeEach, afterEach, vi } from "vitest";
+import { saveAs } from "file-saver";
+import JsZip from "jszip";
+import { addToZip, zip } from "../zip.js";
+import stub from "./stub.js";
+
+vi.mock("file-saver", async (importOriginal) => {
+  const mod = await importOriginal();
+
+  return {
+    ...mod,
+    saveAs: vi.fn(),
+  };
+});
+
+describe("addToZip", () => {
+  beforeEach(() => {
+    stub.fs.init("test", { wipe: true });
+  });
+
+  afterEach(async () => {
+    // for lightning fs to release mutex on indexedDB
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  });
+
+  test("changes zipDir", async () => {
+    // write test dataset
+    await stub.fs.promises.mkdir(stub.dirpath);
+
+    await stub.fs.promises.writeFile(stub.filepath, stub.content);
+
+    const zipDir = new JsZip();
+
+    await addToZip(stub.fs, stub.dirpath, zipDir);
+
+    await expect(zipDir).toEqual(
+      expect.objectContaining({
+        files: { [stub.filename]: expect.objectContaining({}) },
+      }),
+    );
+  });
+});
+
+describe("zip", () => {
+  beforeEach(() => {
+    stub.fs.init("test", { wipe: true });
+  });
+
+  afterEach(async () => {
+    // for lightning fs to release mutex on indexedDB
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  });
+
+  test("calls saveAs", async () => {
+    // write test dataset
+    await stub.fs.promises.mkdir(stub.dirpath);
+
+    await stub.fs.promises.writeFile(stub.filepath, stub.content);
+
+    await zip(stub.fs, stub.mind);
+
+    await expect(saveAs).toHaveBeenCalledWith(new Blob(), "archive.zip");
+  });
+});
