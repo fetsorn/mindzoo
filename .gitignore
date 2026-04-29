@@ -90,3 +90,5 @@ out/
 **/dist/
 /js/.vitest-attachments/
 **/__screenshots__
+
+**/target

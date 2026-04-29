@@ -30,12 +30,13 @@ export async function gitinit(fs, mind, name) {
 
   try {
     existingMind = await findMind(fs, mind);
-  } catch {
+  } catch (e) {
+    console.log(e);
     // do nothing
   }
 
   if (existingMind !== undefined) {
-    throw Error("mind already exists");
+    throw Error("EEXIST");
   }
 
   const dir = nameMind(mind, name);

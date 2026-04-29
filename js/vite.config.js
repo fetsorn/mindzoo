@@ -10,10 +10,12 @@ export default defineConfig({
     build: {
         lib: {
             entry: resolve(__dirname, "src/index.js"),
-            formats: ["es"],
+            name: "mindzoo",
             fileName: "mindzoo",
         },
         sourcemap: "inline",
+        minify: false,
+        terserOptions: { compress: false, mangle: false },
     },
     test: {
         include: ["./src/test/*.test.js"],
