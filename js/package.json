@@ -1,7 +1,7 @@
 {
   "name": "@fetsorn/mindzoo",
   "productName": "mindzoo",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Omnipresent decentralized data",
   "type": "module",
   "files": ["dist"],
