@@ -1,9 +1,7 @@
 import lfs from "@fetsorn/isogit-lfs";
 import git from "isomorphic-git";
 import http from "isomorphic-git/http/web";
-import { saveAs } from "file-saver";
-import { findMind, fetchFile, writeFile, pickFile } from "./io.js";
-import { getOrigin } from "./git.js";
+import { findMind, fetchFile, writeFile } from "@/io.js";
 
 export const lfsDir = "lfs";
 
@@ -145,19 +143,8 @@ export async function putAsset(fs, mind, filename, content) {
 }
 
 /**
- * This
- * @name downloadAsset
- * @function
- * @param {String} content -
- * @param {String} filename -
- */
-export function downloadAsset(content, filename) {
-  saveAs(content, filename);
-}
-
-/**
  * This returns file contents
- * @name downloadAsset
+ * @name fetchAsset
  * @function
  * @param {String} mind -
  * @param {String} filename -
@@ -203,8 +190,17 @@ export async function fetchAsset(fs, mind, filename) {
   if (lfs.pointsToLFS(contentUTF8)) {
     const pointer = await lfs.readPointer({ dir, content: contentUTF8 });
 
-    // loop over remotes trying to resolve LFS
-    const { url: remoteUrl, token: remoteToken } = await getOrigin(fs, mind);
+    const remoteUrl = await git.getConfig({
+      fs,
+      dir,
+      path: `remote.origin.url`,
+    });
+
+    const remoteToken = await git.getConfig({
+      fs,
+      dir,
+      path: `remote.origin.token`,
+    });
 
     try {
       content = await lfs.downloadBlobFromPointer({
@@ -284,10 +280,8 @@ export async function uploadBlobsLFS(fs, mind, remoteUrl, remoteToken, files) {
  * @function
  * @param {String} mind -
  */
-export async function uploadFile(fs, mind) {
+export async function uploadFile(fs, mind, files) {
   let metadata = [];
-
-  const files = await pickFile();
 
   for (const file of files) {
     const fileArrayBuffer = await file.arrayBuffer();
@@ -319,3 +313,15 @@ export async function uploadFile(fs, mind) {
 
   return metadata;
 }
+
+export default {
+  uploadFile,
+  uploadBlobsLFS,
+  fetchAsset,
+  putAsset,
+  getAssetPath,
+  setAssetPath,
+  downloadUrlFromPointer,
+  addLFS,
+  createLFS,
+};

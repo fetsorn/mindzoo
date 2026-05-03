@@ -1,5 +1,4 @@
 import JsZip from "jszip";
-import { saveAs } from "file-saver";
 import { findMind } from "./io.js";
 
 /**
@@ -44,5 +43,5 @@ export async function zip(fs, mind) {
 
   const content = await zip.generateAsync({ type: "blob" });
 
-  saveAs(content, "archive.zip");
+  return content;
 }

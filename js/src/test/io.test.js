@@ -1,13 +1,5 @@
 import { expect, test, describe, beforeEach, afterEach, vi } from "vitest";
-import {
-  findMind,
-  fetchFile,
-  readFile,
-  writeFile,
-  rimraf,
-  ls,
-  pickFile,
-} from "../io.js";
+import { findMind, fetchFile, readFile, writeFile, rimraf, ls } from "../io.js";
 import stub from "./stub.js";
 
 describe("findMind", () => {
@@ -232,21 +224,5 @@ describe("ls", () => {
 list //${stub.dir}: ${stub.dir}
 list //${stub.dir}/${stub.dir}: ${stub.filename}
 `);
-  });
-});
-
-describe("pickFile", () => {
-  test("find a directory", async () => {
-    const input = document.createElement("input");
-
-    document.createElement = vi.fn(() => input);
-
-    setTimeout(() => input.onchange({ target: { files: [stub.file] } }), 50);
-
-    const files = await pickFile();
-
-    expect(document.createElement).toHaveBeenCalledWith("input");
-
-    expect(files).toEqual([stub.file]);
   });
 });

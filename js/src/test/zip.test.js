@@ -1,17 +1,7 @@
 import { expect, test, describe, beforeEach, afterEach, vi } from "vitest";
-import { saveAs } from "file-saver";
 import JsZip from "jszip";
 import { addToZip, zip } from "../zip.js";
 import stub from "./stub.js";
-
-vi.mock("file-saver", async (importOriginal) => {
-  const mod = await importOriginal();
-
-  return {
-    ...mod,
-    saveAs: vi.fn(),
-  };
-});
 
 describe("addToZip", () => {
   beforeEach(() => {
@@ -51,14 +41,14 @@ describe("zip", () => {
     await new Promise((resolve) => setTimeout(resolve, 500));
   });
 
-  test("calls saveAs", async () => {
+  test("returns an archive", async () => {
     // write test dataset
     await stub.fs.promises.mkdir(stub.dirpath);
 
     await stub.fs.promises.writeFile(stub.filepath, stub.content);
 
-    await zip(stub.fs, stub.mind);
+    const content = await zip(stub.fs, stub.mind);
 
-    await expect(saveAs).toHaveBeenCalledWith(new Blob(), "archive.zip");
+    await expect(content).toEqual(new Blob());
   });
 });

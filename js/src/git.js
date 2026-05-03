@@ -133,25 +133,6 @@ export async function commit(fs, mind) {
 
 /**
  * This
- * @name rename
- * @function
- * @param {String} source -
- * @param {String} target -
- */
-export async function rename(fs, mind, name) {
-  // should be a recursive copy,
-  // but don't want to implement it
-  const existingMind = await findMind(fs, mind);
-
-  const dir = nameMind(mind, name);
-
-  await fs.promises.rename(existingMind, dir);
-
-  return undefined;
-}
-
-/**
- * This
  * @name clone
  * @function
  * @param {String} mind -
@@ -416,3 +397,13 @@ export async function resolve(fs, mind, remote, resolutions) {
 
   return { ok: true };
 }
+
+export default {
+  nameMind,
+  gitinit,
+  commit,
+  clone,
+  getOrigin,
+  setOrigin,
+  resolve,
+};

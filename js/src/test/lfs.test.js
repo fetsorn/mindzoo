@@ -12,7 +12,6 @@ import {
   putAsset,
   uploadFile,
   uploadBlobsLFS,
-  downloadAsset,
   downloadUrlFromPointer,
   setAssetPath,
   getAssetPath,
@@ -64,7 +63,6 @@ vi.mock("../io.js", async (importOriginal) => {
     ...mod,
     fetchFile: vi.fn(mod.fetchFile),
     writeFile: vi.fn(mod.writeFile),
-    pickFile: vi.fn(() => [stub.file]),
   };
 });
 
@@ -176,12 +174,6 @@ describe("putAsset", () => {
       stub.content,
     );
   });
-});
-
-test("downloadAsset", async () => {
-  downloadAsset(stub.content, stub.filename);
-
-  expect(saveAs).toHaveBeenCalledWith(stub.content, stub.filename);
 });
 
 describe("setAssetPath", () => {
@@ -428,7 +420,7 @@ describe("uploadFile", () => {
 
     await stub.fs.promises.mkdir(`${stub.dirpath}/${lfsDir}`);
 
-    const metadata = await uploadFile(stub.fs, stub.mind);
+    const metadata = await uploadFile(stub.fs, stub.mind, [stub.file]);
 
     expect(metadata).toEqual([
       {

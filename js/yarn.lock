@@ -1133,13 +1133,14 @@
     "@eslint/core" "^1.2.1"
     levn "^0.4.1"
 
-"@fetsorn/csvs-js@^0.27.2":
-  version "0.27.2"
-  resolved "https://registry.yarnpkg.com/@fetsorn/csvs-js/-/csvs-js-0.27.2.tgz#cba682b9d8ab389d1b931f85026794fb2ee8a873"
-  integrity sha512-PzkSTTIbo7UlJpt+xx8sZlJUPjTuPoXQLwLLWUKTq4PQzGsMjDbkFzPAyvAqOWe1zOLTooiHC/K0TwopS5jq3g==
+"@fetsorn/csvs-js@^0.28.1":
+  version "0.28.1"
+  resolved "https://registry.yarnpkg.com/@fetsorn/csvs-js/-/csvs-js-0.28.1.tgz#f181fb4ba069fb90e0c2292fc62f9daf2865691b"
+  integrity sha512-lclcGlJJxw9a7U2dHnk2IiyNKpokOPlrQrC7zOLnN6pzN48qiKLchvR9nP1Y5t4cmY/6rJc8HLnzb3PBlZejQg==
   dependencies:
     "@swimburger/isomorphic-streams" "^1.1.1"
     papaparse "^5.4.1"
+    path-browserify "^1.0.1"
 
 "@fetsorn/isogit-lfs@^0.5.3":
   version "0.5.3"

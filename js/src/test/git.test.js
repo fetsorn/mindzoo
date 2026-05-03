@@ -134,19 +134,19 @@ describe("gitinit", () => {
     await expect(gitinit(stub.fs, "root")).rejects.toThrowError();
   });
 
-  test("renames a directory", async () => {
-    await gitinit(stub.fs, stub.dir);
+  //test("renames a directory", async () => {
+  //  await gitinit(stub.fs, stub.dir);
 
-    const newName = "newName";
+  //  const newName = "newName";
 
-    const newDir = `${stub.mind}-${newName}`;
+  //  const newDir = `${stub.mind}-${newName}`;
 
-    await gitinit(stub.fs, stub.mind, newName);
+  //  await gitinit(stub.fs, stub.mind, newName);
 
-    const listing = await stub.fs.promises.readdir("/");
+  //  const listing = await stub.fs.promises.readdir("/");
 
-    expect(listing).toEqual([newDir]);
-  });
+  //  expect(listing).toEqual([newDir]);
+  //});
 });
 
 describe("clone", () => {

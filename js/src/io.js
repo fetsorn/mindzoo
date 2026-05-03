@@ -189,26 +189,29 @@ export async function ls(fs, lspath) {
 
 /**
  * This
- * @name pickFile
+ * @name rename
  * @function
+ * @param {String} source -
+ * @param {String} target -
  */
-export async function pickFile() {
-  const input = document.createElement("input");
+export async function rename(fs, mind, name) {
+  // should be a recursive copy,
+  // but don't want to implement it
+  const existingMind = await findMind(fs, mind);
 
-  input.type = "file";
+  const dir = nameMind(mind, name);
 
-  input.multiple = "multiple";
+  await fs.promises.rename(existingMind, dir);
 
-  return new Promise((res) => {
-    input.onchange = async (e) => {
-      res(e.target.files);
-    };
-
-    // resolve with empty list if user cancels the file picker
-    input.addEventListener("cancel", () => {
-      res([]);
-    });
-
-    input.click();
-  });
+  return undefined;
 }
+
+export default {
+  findMind,
+  fetchFile,
+  readFile,
+  writeFile,
+  rimraf,
+  ls,
+  rename,
+};
