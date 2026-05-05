@@ -63,43 +63,6 @@ export function enrichBranchRecords(schemaRecord, metaRecords) {
 }
 
 /**
- * This extracts schema record with trunks from branch records
- * @name extractSchemaRecords
- * @function
- * @param {object} branchRecords -
- * @returns {object[]}
- */
-export function extractSchemaRecords(branchRecords) {
-  const records = branchRecords.reduce(
-    (withBranch, branchRecord) => {
-      const { trunk, leaf: omit, ...branchRecordOmitted } = branchRecord;
-
-      const trunks = Array.isArray(trunk) ? trunk : [trunk];
-
-      const schemaRecord = trunks
-        .filter((t) => t !== undefined)
-        .reduce((withTrunk, trunk) => {
-          const leaves = withBranch.schemaRecord[trunk] ?? [];
-
-          const schemaRecord = {
-            ...withBranch.schemaRecord,
-            [trunk]: [...new Set([branchRecord.branch, ...leaves])],
-          };
-
-          return schemaRecord;
-        }, withBranch.schemaRecord);
-
-      const metaRecords = [branchRecordOmitted, ...withBranch.metaRecords];
-
-      return { schemaRecord, metaRecords };
-    },
-    { schemaRecord: { _: "_" }, metaRecords: [] },
-  );
-
-  return [records.schemaRecord, ...records.metaRecords];
-}
-
-/**
  * This converts schema to schema record and branch records
  * @name schemaToBranchRecords
  * @function
@@ -305,4 +268,41 @@ export function queryToSearchParams(query) {
   searchParams.sort();
 
   return searchParams;
+}
+
+/**
+ * This extracts schema record with trunks from branch records
+ * @name extractSchemaRecords
+ * @function
+ * @param {object} branchRecords -
+ * @returns {object[]}
+ */
+export function extractSchemaRecords(branchRecords) {
+  const records = branchRecords.reduce(
+    (withBranch, branchRecord) => {
+      const { trunk, leaf: omit, ...branchRecordOmitted } = branchRecord;
+
+      const trunks = Array.isArray(trunk) ? trunk : [trunk];
+
+      const schemaRecord = trunks
+        .filter((t) => t !== undefined)
+        .reduce((withTrunk, trunk) => {
+          const leaves = withBranch.schemaRecord[trunk] ?? [];
+
+          const schemaRecord = {
+            ...withBranch.schemaRecord,
+            [trunk]: [...new Set([branchRecord.branch, ...leaves])],
+          };
+
+          return schemaRecord;
+        }, withBranch.schemaRecord);
+
+      const metaRecords = [branchRecordOmitted, ...withBranch.metaRecords];
+
+      return { schemaRecord, metaRecords };
+    },
+    { schemaRecord: { _: "_" }, metaRecords: [] },
+  );
+
+  return [records.schemaRecord, ...records.metaRecords];
 }
