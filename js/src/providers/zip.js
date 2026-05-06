@@ -1,5 +1,4 @@
 import JsZip from "jszip";
-import { findMind } from "./io.js";
 
 /**
  * This
@@ -34,9 +33,7 @@ export async function addToZip(fs, dir, zipDir) {
  * @function
  * @param {String} mind -
  */
-export async function zip(fs, mind) {
-  const dir = await findMind(fs, mind);
-
+export async function zip(fs, dir) {
   const zip = new JsZip();
 
   await addToZip(fs, dir, zip);

@@ -21,6 +21,16 @@ async function DELETE(fs, dir, query) {
   });
 }
 
+async function UPDATE(fs, dir, query) {
+  await csvs.init({ fs, dir });
+
+  return csvs.updateRecord({
+    fs,
+    dir,
+    query,
+  });
+}
+
 async function sparql(providers, dir, { kind, graph, query }) {
   // TODO accept sparql string and infer kind with haydee
   // const { kind, graph, inner } = await haydee.classify(sparql);

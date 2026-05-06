@@ -1,7 +1,5 @@
-import lfs from "@fetsorn/isogit-lfs";
 import git from "isomorphic-git";
-import http from "isomorphic-git/http/web";
-import { findMind, fetchFile, writeFile } from "@/io.js";
+import lfs from "@fetsorn/isogit-lfs";
 
 export const lfsDir = "lfs";
 
@@ -11,9 +9,7 @@ export const lfsDir = "lfs";
  * @function
  * @param {String} mind -
  */
-export async function createLFS(fs, mind) {
-  const dir = await findMind(fs, mind);
-
+export async function createLFS(fs, dir) {
   await fs.promises.writeFile(
     `${dir}/.gitattributes`,
     `${lfsDir}/** filter=lfs diff=lfs merge=lfs -text\n`,
@@ -81,6 +77,8 @@ export async function addLFS(fs, dir, filepath) {
  * @returns {String}
  */
 export async function downloadUrlFromPointer(url, token, pointerInfo) {
+  const http = await import("isomorphic-git/http/web");
+
   return lfs.downloadUrlFromPointer({
     http,
     url,
@@ -99,9 +97,7 @@ export async function downloadUrlFromPointer(url, token, pointerInfo) {
  * @param {String} mind -
  * @param {String} assetPath -
  */
-export async function setAssetPath(fs, mind, assetPath) {
-  const dir = await findMind(fs, mind);
-
+export async function setAssetPath(fs, dir, assetPath) {
   await git.setConfig({
     fs,
     dir,
@@ -117,9 +113,7 @@ export async function setAssetPath(fs, mind, assetPath) {
  * @param {String} mind -
  * @returns {String}
  */
-export async function getAssetPath(fs, mind) {
-  const dir = await findMind(fs, mind);
-
+export async function getAssetPath(fs, dir) {
   return git.getConfigAll({
     fs,
     dir,
@@ -139,7 +133,7 @@ export async function putAsset(fs, mind, filename, content) {
   // write buffer to assetEndpoint/filename
   const assetEndpoint = `${lfsDir}/${filename}`;
 
-  await writeFile(fs, mind, assetEndpoint, content);
+  //await writeFile(fs, mind, assetEndpoint, content);
 }
 
 /**
@@ -150,12 +144,10 @@ export async function putAsset(fs, mind, filename, content) {
  * @param {String} filename -
  * @returns {Uint8Array}
  */
-export async function fetchAsset(fs, mind, filename) {
+export async function fetchAsset(fs, dir, filename) {
   let assetEndpoint;
 
   let content;
-
-  const dir = await findMind(fs, mind);
 
   try {
     assetEndpoint = await git.getConfig({
@@ -167,7 +159,7 @@ export async function fetchAsset(fs, mind, filename) {
     if (assetEndpoint) {
       const assetPath = `${assetEndpoint}/${filename}`;
 
-      // SEC-09: skip URL-based fetch to prevent SSRF from malicious git config
+      // skip URL-based fetch to prevent SSRF from malicious git config
       // Only allow filesystem reads for asset paths
 
       // otherwise try to read from fs
@@ -202,6 +194,8 @@ export async function fetchAsset(fs, mind, filename) {
       path: `remote.origin.token`,
     });
 
+    const http = await import("isomorphic-git/http/web");
+
     try {
       content = await lfs.downloadBlobFromPointer({
         fs,
@@ -233,9 +227,7 @@ export async function fetchAsset(fs, mind, filename) {
  * @param {String} remoteToken -
  * @param {File[]} files -
  */
-export async function uploadBlobsLFS(fs, mind, remoteUrl, remoteToken, files) {
-  const dir = await findMind(fs, mind);
-
+export async function uploadBlobsLFS(fs, dir, remoteUrl, remoteToken, files) {
   let assets;
 
   // if no files are specified
@@ -248,7 +240,7 @@ export async function uploadBlobsLFS(fs, mind, remoteUrl, remoteToken, files) {
     assets = (
       await Promise.all(
         filenames.map(async (filename) => {
-          const file = await fetchFile(fs, mind, `${lfsDir}/${filename}`);
+          //const file = await fetchFile(fs, mind, `${lfsDir}/${filename}`);
 
           if (!lfs.pointsToLFS(file)) {
             return file;

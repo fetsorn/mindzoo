@@ -1,12 +1,11 @@
-import { updateRecord } from "@/proxy/impure.js";
-import storageCSVS from "@/storage.js";
-import catalogIO from "@/catalog.js";
-import federationGit from "@/federation.js";
+import csvs from "@/providers/csvs.js";
+import git from "@/providers/git.js";
+import io from "@/providers/catalog.js";
 
 async function SELECT({ fs, dir, catalog }, mind, query) {
   const dirMind = await catalog.locate(mind);
 
-  const storage = storageCSVS(fs, dirMind);
+  const storage = csvs(fs, dirMind);
 
   return storage.sparql({ kind: "SELECT", query });
 }
@@ -14,39 +13,37 @@ async function SELECT({ fs, dir, catalog }, mind, query) {
 async function DESCRIBE({ fs, dir, catalog }, mind, query) {
   const dirMind = await catalog.locate(mind);
 
-  const storage = storageCSVS(fs, dirMind);
+  const storage = csvs(fs, dirMind);
 
   return storage.sparql({ kind: "DESCRIBE", query });
 }
 
-async function DELETE({ fs, dir, federation, catalog }, mind, query) {
+async function DELETE({ fs, dir, catalog, federation }, mind, query) {
   const dirMind = await catalog.locate(mind);
 
-  const storage = storageCSVS(fs, dirMind);
+  const storage = csvs(fs, dirMind);
 
   await storage.sparql({ kind: "DELETE", query });
 
   await federation.settle(dirMind);
 
-  if (mind === "root") return catalog.retire(query);
+  const isMind = mind === "root" && query._ === "mind";
+
+  if (isMind) return catalog.retire(query.mind);
 }
 
-async function UPDATE({ fs, dir, storage, federation }, mind, query) {
-  //const dirMind = await catalog.locate(mind);
+async function UPDATE({ fs, dir, catalog, federation }, mind, query) {
+  const dirMind = await catalog.locate(mind);
 
-  //await storage.sparql(dirMind, { kind: "UPDATE", query });
-  await updateRecord(fs, mind, query);
+  const storage = csvs(fs, dirMind);
 
-  //await federation.settle();
-  //await git.commit(fs, mind);
+  await storage.sparql({ kind: "UPDATE", query });
 
-  //try {
-  //    await git.resolve(fs, mind);
-  //} catch {
-  //    //do nothing
-  //}
+  await federation.settle(dirMind);
 
-  //if (graph === "root") return catalog.induct(query);
+  const isMind = mind === "root" && query._ === "mind";
+
+  if (isMind) return catalog.induct(query);
 }
 
 async function sparql(providers, { kind, graph, query }) {
@@ -69,9 +66,9 @@ async function sparql(providers, { kind, graph, query }) {
 }
 
 export default async function createMindZoo({ fs, dir }) {
-  const federation = federationGit(fs);
+  const federation = git(fs);
 
-  const catalog = catalogIO({ fs, dir, federation });
+  const catalog = io({ fs, dir, federation });
 
   await catalog.rebuild();
 

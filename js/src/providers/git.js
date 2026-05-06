@@ -1,51 +1,54 @@
-import http from "isomorphic-git/http/web";
-import diff3Merge from "diff3";
 import git from "isomorphic-git";
-import { addLFS } from "./lfs.js";
-import { findMind, rimraf } from "./io.js";
+import diff3Merge from "diff3";
+// move to @fetsorn/isogit-lfs
+import { addLFS } from "@/providers/lfs.js";
 
-/**
- * This
- * @name nameMind
- * @function
- * @param {String} mind -
- * @param {String} name -
- * @returns {String}
- */
-export function nameMind(mind, name) {
-  if (mind === undefined) throw "id is undefined";
+export async function gitinit(fs, dir) {
+  const hasGit = (await fs.promises.readdir(dir)).includes(".git");
 
-  return `/${mind}${name !== undefined ? `-${name}` : ""}`;
+  if (!hasGit) {
+    await git.init({ fs, dir, defaultBranch: "main" });
+
+    await fs.promises.writeFile(`${dir}/.gitignore`, `.DS_Store`, "utf8");
+  }
 }
 
-/**
- * This
- * @name gitinit
- * @function
- * @param {String} mind -
- * @param {String} name -
- */
-export async function gitinit(fs, mind, name) {
-  let existingMind;
+export async function clone(fs, dir, remote) {
+  const hasGit = (await fs.promises.readdir(dir)).includes(".git");
 
+  if (hasGit) {
+    return;
+  }
+
+  const options = {
+    fs,
+    http,
+    dir,
+    url: remote.url,
+    singleBranch: true,
+  };
+
+  if (remote.token !== undefined) {
+    options.onAuth = () => ({
+      username: remote.token,
+    });
+  }
+
+  await git.clone(options);
+
+  // if clone is successful, try to set token
   try {
-    existingMind = await findMind(fs, mind);
+    if (remote.token !== undefined) {
+      await git.setConfig({
+        fs,
+        dir,
+        path: "remote.origin.token",
+        value: remote.token,
+      });
+    }
   } catch (e) {
-    console.log(e);
-    // do nothing
+    console.error("failed to save auth token to git config:", e);
   }
-
-  if (existingMind !== undefined) {
-    throw Error("EEXIST");
-  }
-
-  const dir = nameMind(mind, name);
-
-  await fs.promises.mkdir(dir);
-
-  await git.init({ fs, dir, defaultBranch: "main" });
-
-  await fs.promises.writeFile(`${dir}/.gitignore`, `.DS_Store`, "utf8");
 }
 
 /**
@@ -54,9 +57,7 @@ export async function gitinit(fs, mind, name) {
  * @function
  * @param {String} mind -
  */
-export async function commit(fs, mind) {
-  const dir = await findMind(fs, mind);
-
+export async function commit(fs, dir) {
   const message = [];
 
   const matrix = await git.statusMatrix({
@@ -98,7 +99,7 @@ export async function commit(fs, mind) {
       } else {
         try {
           // fails if filepath is not lfs
-          await addLFS(dir, filepath);
+          await addLFS(fs, dir, filepath);
         } catch {
           await git.add({
             fs,
@@ -131,91 +132,21 @@ export async function commit(fs, mind) {
   }
 }
 
-/**
- * This
- * @name clone
- * @function
- * @param {String} mind -
- * @param {String} remote -
- */
-export async function clone(fs, mind, remote) {
-  const dir = nameMind(mind, undefined);
-
-  try {
-    await findMind(fs, mind);
-
-    // remove existing directory
-    await rimraf(fs, dir);
-  } catch (e) {
-    // directory may not exist yet — safe to ignore
-    console.warn("rimraf before clone:", e);
-  }
-
-  const options = {
-    fs,
-    http,
-    dir,
-    url: remote.url,
-    singleBranch: true,
-  };
-
-  if (remote.token !== undefined) {
-    options.onAuth = () => ({
-      username: remote.token,
-    });
-  }
-
-  try {
-    await git.clone(options);
-  } catch (e) {
-    try {
-      // if clone failed, remove directory
-      await rimraf(fs, dir);
-    } catch (e1) {
-      console.error("cleanup after failed clone:", e1);
-    }
-    throw e;
-  }
-
-  // if clone is successful, try to set token
-  try {
-    if (remote.token !== undefined) {
-      await git.setConfig({
-        fs,
-        dir,
-        path: "remote.origin.token",
-        value: remote.token,
-      });
-    }
-  } catch (e) {
-    console.error("failed to save auth token to git config:", e);
-  }
-}
-
-/**
- * This
- * @name setOrigin
- * @function
- * @param {String} mind -
- * @param {Object} remote -
- */
-export async function setOrigin(fs, mind, remote) {
-  const dir = await findMind(fs, mind);
-
+export async function setOrigin(fs, dir, origin) {
   await git.addRemote({
     fs,
     dir,
     remote: "origin",
-    url: remote.url,
+    url: origin.url,
     force: true, // overwrite existing origin
   });
 
-  if (remote.token !== undefined) {
+  if (origin.token !== undefined) {
     await git.setConfig({
       fs,
       dir,
       path: `remote.origin.token`,
-      value: remote.token,
+      value: origin.token,
       force: true,
     });
   }
@@ -228,9 +159,7 @@ export async function setOrigin(fs, mind, remote) {
  * @param {String} mind -
  * @returns {object}
  */
-export async function getOrigin(fs, mind) {
-  const dir = await findMind(fs, mind);
-
+export async function getOrigin(fs, dir) {
   const url = await git.getConfig({
     fs,
     dir,
@@ -294,18 +223,8 @@ function mergeDriverFactory(conflicts, resolutions) {
   };
 }
 
-/**
- * This
- * @name sync
- * @function
- * @param {String} mind -
- * @param {Object} remote -
- * @param {Object} resolutions -
- */
-export async function resolve(fs, mind, _remote, resolutions) {
-  const dir = await findMind(fs, mind);
-
-  const remote = await getOrigin(fs, mind);
+export async function resolve(fs, dir, resolutions) {
+  const remote = await getOrigin(fs, dir);
 
   // soft-serve uses "token ${remote.token}". first word CAN be Token
   // gitea uses "token ${remote.token}". first word MUST be lower-case "token"
@@ -318,6 +237,8 @@ export async function resolve(fs, mind, _remote, resolutions) {
         }),
       }
     : {};
+
+  const http = await import("isomorphic-git/http/web");
 
   await git.fetch({
     fs,
@@ -392,12 +313,36 @@ export async function resolve(fs, mind, _remote, resolutions) {
   return { ok: true };
 }
 
-export default {
-  nameMind,
-  gitinit,
-  commit,
-  clone,
-  getOrigin,
-  setOrigin,
-  resolve,
+async function settle(fs, dir, origin) {
+  // clone
+  if (origin) {
+    await clone(fs, dir, origin);
+  }
+
+  // init
+  await gitinit(fs, dir);
+
+  // commit
+  await commit(fs, dir);
+
+  // set remote and token in .git/config
+  if (origin) {
+    await setOrigin(fs, dir, origin);
+  }
+
+  try {
+    // fetch
+    // merge
+    // push
+    await resolve(fs, dir);
+  } catch {
+    //do nothing
+  }
+}
+
+export default (fs) => {
+  return {
+    settle: (dir) => settle(fs, dir),
+    getOrigin: (dir) => getOrigin(fs, dir),
+  };
 };

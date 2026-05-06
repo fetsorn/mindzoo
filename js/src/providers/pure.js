@@ -54,67 +54,13 @@ export function recordsToMind(
 }
 
 /**
- * This converts schema to schema record and branch records
- * @name schemaToBranchRecords
- * @function
- * @param {object} schema -
- * @returns {object}
- */
-export function schemaToBranchRecords(schema) {
-  const records = Object.entries(schema).reduce(
-    (withEntry, [branch, { leaves, task, cognate, description }]) => {
-      const leavesPartial = withEntry.schemaRecord[branch] ?? [];
-
-      const schemaRecord =
-        leaves.length > 0
-          ? {
-              ...withEntry.schemaRecord,
-              [branch]: [...new Set([...leaves, ...leavesPartial])],
-            }
-          : withEntry.schemaRecord;
-
-      const partialEn =
-        description && description.en !== undefined
-          ? { description_en: description.en }
-          : {};
-
-      const partialRu =
-        description && description.ru !== undefined
-          ? { description_ru: description.ru }
-          : {};
-
-      const partialTask = task ? { task } : {};
-
-      const partialCognate = cognate ? { cognate } : {};
-
-      const metaRecords = [
-        ...withEntry.metaRecords,
-        {
-          _: "branch",
-          branch,
-          ...partialTask,
-          ...partialCognate,
-          ...partialEn,
-          ...partialRu,
-        },
-      ];
-
-      return { schemaRecord, metaRecords };
-    },
-    { schemaRecord: { _: "_" }, metaRecords: [] },
-  );
-
-  return [records.schemaRecord, ...records.metaRecords];
-}
-
-/**
  * This extracts schema record with trunks from branch records
- * @name extractSchemaRecords
+ * @name mindToRecords
  * @function
  * @param {object} branchRecords -
  * @returns {object[]}
  */
-export function extractSchemaRecords(branchRecords) {
+export function mindToRecords(branchRecords) {
   const records = branchRecords.reduce(
     (withBranch, branchRecord) => {
       const { trunk, leaf: omit, ...branchRecordOmitted } = branchRecord;
