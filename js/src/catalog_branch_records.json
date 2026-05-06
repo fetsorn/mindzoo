@@ -1,0 +1,89 @@
+[
+    {
+        "_": "branch",
+        "branch": "mind",
+        "description_en": "mind",
+        "description_ru": "Проект"
+    },
+    {
+        "_": "branch",
+        "branch": "name",
+        "description_en": "Name of the mind",
+        "description_ru": "Название проекта"
+    },
+    {
+        "_": "branch",
+        "branch": "category",
+        "description_en": "Category of the mind",
+        "description_ru": "Категория проекта"
+    },
+    {
+        "_": "branch",
+        "branch": "branch",
+        "description_en": "Branch name",
+        "description_ru": "Название ветки"
+    },
+    {
+        "_": "branch",
+        "branch": "trunk",
+        "description_en": "Branch trunk",
+        "description_ru": "Ствол ветки"
+    },
+    {
+        "_": "branch",
+        "branch": "task",
+        "description_en": "Branch task",
+        "description_ru": "Предназначение ветки"
+    },
+    {
+        "_": "branch",
+        "branch": "cognate",
+        "description_en": "Branch cognate",
+        "description_ru": "Родственная ветка"
+    },
+    {
+        "_": "branch",
+        "branch": "description_en",
+        "description_en": "Branch description EN",
+        "description_ru": "Описание ветки на английском"
+    },
+    {
+        "_": "branch",
+        "branch": "description_ru",
+        "description_en": "Branch description RU",
+        "description_ru": "Описание ветки на русском"
+    },
+    {
+        "_": "branch",
+        "branch": "local_tag",
+        "task": "directory",
+        "description_en": "Path to asset archive",
+        "description_ru": "Путь к локальному архиву"
+    },
+    {
+        "_": "branch",
+        "branch": "origin_url",
+        "task": "remote",
+        "description_en": "URL to remote git repository",
+        "description_ru": "Путь к удалённому git репозиторию"
+    },
+    {
+        "_": "branch",
+        "branch": "origin_token",
+        "description_en": "Authentication token",
+        "description_ru": "Токен для синхронизации"
+    },
+    {
+        "_": "branch",
+        "branch": "sync_tag",
+        "task": "sync",
+        "description_en": "Name of database to sync",
+        "description_ru": "Название базы данных для синхронизации"
+    },
+    {
+        "_": "branch",
+        "branch": "sync_tag_search",
+        "description_en": "Search query",
+        "description_ru": "Поисковый запрос"
+    }
+]

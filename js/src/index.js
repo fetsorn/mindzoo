@@ -37,6 +37,22 @@ async function DELETE({ fs, dir, storage, federation }, mind, query) {
     }
 }
 
+async function UPDATE({ fs, dir, storage, federation }, mind, query) {
+    //const dirMind = await catalog.locate(fs, dir, mind);
+
+    //await storage.sparql(dirMind, { kind: "DELETE", query });
+    await updateRecord(fs, mind, query);
+
+    //await federation.settle();
+    //await git.commit(fs, mind);
+
+    //try {
+    //    await git.resolve(fs, mind);
+    //} catch {
+    //    //do nothing
+    //}
+}
+
 async function sparql(
     { fs, catalog, federation, storage },
     { kind, graph, query },
@@ -53,8 +69,8 @@ async function sparql(
         case "DESCRIBE":
             return DESCRIBE({ fs, catalog, federation, storage }, graph, query);
 
-        //    //case "UPDATE":
-        //    //    return UPDATE(providers, graph, query);
+        case "UPDATE":
+            return UPDATE({ fs, catalog, federation, storage }, graph, query);
 
         case "DELETE":
             await DELETE({ fs, catalog, federation, storage }, graph, query);
@@ -74,7 +90,7 @@ export default async function createMindZoo({ fs, dir }) {
 
     return {
         ...providers,
-        sparql: (query) => sparql(providers, query),
+        sparql: async (query) => sparql(providers, query),
         createCatalog,
         open,
         selectStream: db.selectStream,

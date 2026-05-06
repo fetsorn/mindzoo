@@ -1,5 +1,6 @@
 import path from "path";
 import db from "@/db.js";
+import { updateRecord } from "@/proxy/impure.js";
 import {
     recordsToMind,
     schemaToBranchRecords,
@@ -7,14 +8,15 @@ import {
 } from "@/pure.js";
 import { rimraf } from "./io.js";
 import git from "./git.js";
-import schemaRoot from "@/proxy/default_root_schema.json";
+import catalogSchemaRecord from "@/catalog_schema_record.json";
+import catalogBranchRecords from "@/catalog_branch_records.json";
 
 async function rebuild({ fs, dir, federation, storage }) {
     const dirCatalog = path.join(dir, "root");
 
-    const minds = await fs.promises.readdir(dir);
+    const rootExists = (await fs.promises.readdir(dir)).includes("root");
 
-    if (minds.includes("root")) {
+    if (rootExists) {
         await rimraf(fs, dirCatalog);
     }
 
@@ -22,20 +24,13 @@ async function rebuild({ fs, dir, federation, storage }) {
 
     await db.csvsinit(fs, "root");
 
-    const schemaRecord = {
-        _: "_",
-        mind: ["name", "category", "branch", "origin_url"],
-        branch: [
-            "trunk",
-            "task",
-            "cognate",
-            "description_en",
-            "description_ru",
-        ],
-        origin_url: ["origin_token"],
-    };
+    await db.updateRecord(fs, "root", catalogSchemaRecord);
 
-    await db.updateRecord(fs, "root", schemaRecord);
+    for (const branchRecord of catalogBranchRecords) {
+        await db.updateRecord(fs, "root", branchRecord);
+    }
+
+    const minds = await fs.promises.readdir(dir);
 
     for (const mindPath of minds) {
         // get name from layout
@@ -50,7 +45,7 @@ async function rebuild({ fs, dir, federation, storage }) {
         const branchRecords = await db.select(fs, uuid, { _: "branch" });
 
         // get remote and token from git
-        const { url, token } = git.getOrigin(fs, uuid);
+        const { url, token } = await git.getOrigin(fs, uuid);
 
         // TODO records to mind
         const mind = recordsToMind(
@@ -94,8 +89,8 @@ async function DESCRIBE({ fs, dir, storage, federation }, query) {
     return db.buildRecord(fs, "root", query);
 }
 
-async function DELETE({ fs, dir, storage, federation }, query) {
-    const dirMind = await catalog.locate(fs, dir, mind);
+async function DELETE({ fs, dir, federation, storage }, query) {
+    const dirCatalog = await locate(fs, dir, "root");
 
     //await storage.sparql(dirMind, { kind: "DELETE", query });
     // do we even need mutation or should just rebuild
@@ -104,9 +99,28 @@ async function DELETE({ fs, dir, storage, federation }, query) {
     //await federation.settle();
     await git.commit(fs, "root");
 
-    const syncResult = await git.resolve(fs, mind);
+    try {
+        await git.resolve(fs, "root");
+    } catch {
+        // do nothing
+    }
+
+    const dirMind = await locate(fs, dir, query.mind);
 
     await rimraf(fs, dirMind);
+}
+
+async function UPDATE({ fs, dir, federation, storage }, query) {
+    const dirCatalog = await locate(fs, dir, "root");
+
+    //await storage.sparql(dirMind, { kind: "DELETE", query });
+    // do we even need mutation or should just rebuild
+    await updateRecord(fs, "root", query);
+
+    //await federation.settle();
+    //await git.commit(fs, "root");
+
+    //const syncResult = await git.resolve(fs, mind);
 }
 
 async function sparql(providers, { kind, query }) {
@@ -117,8 +131,8 @@ async function sparql(providers, { kind, query }) {
         case "DESCRIBE":
             return DESCRIBE(providers, query);
 
-        //case "UPDATE":
-        //    return UPDATE(providers, query);
+        case "UPDATE":
+            return UPDATE(providers, query);
 
         case "DELETE":
             await DELETE(providers, query);
@@ -127,12 +141,12 @@ async function sparql(providers, { kind, query }) {
 
 export default (providers) => {
     return {
-        locate: (mind) => resolve(providers, mind),
+        locate: async (mind) => resolve(providers, mind),
         //induct: (mind) => induct(providers, mind),
         //retire: (mind) => retire(providers, mind),
         //EXPORT: (mind) => zip(providers, mind),
-        sparql: (query) => sparql(providers, query),
-        rebuild: () => rebuild(providers),
+        sparql: async (query) => sparql(providers, query),
+        rebuild: async () => rebuild(providers),
         //settle,
     };
 };

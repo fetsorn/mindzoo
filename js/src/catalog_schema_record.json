@@ -1,0 +1,6 @@
+{
+    "_": "_",
+    "mind": ["name", "category", "branch", "origin_url"],
+    "branch": ["trunk", "task", "cognate", "description_en", "description_ru"],
+    "origin_url": ["origin_token"]
+}
