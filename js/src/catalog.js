@@ -82,6 +82,12 @@ async function locate(fs, dir, mind) {
     }
 }
 
+async function SELECT({ fs, dir, storage, federation }, query) {
+    const dirMind = await locate(fs, dir, "root");
+
+    return db.selectStream(fs, "root", query);
+}
+
 async function DESCRIBE({ fs, dir, storage, federation }, query) {
     const dirMind = await locate(fs, dir, "root");
 
@@ -105,8 +111,8 @@ async function DELETE({ fs, dir, storage, federation }, query) {
 
 async function sparql(providers, { kind, query }) {
     switch (kind) {
-        //case "SELECT":
-        //    return SELECT(providers, query);
+        case "SELECT":
+            return SELECT(providers, query);
 
         case "DESCRIBE":
             return DESCRIBE(providers, query);

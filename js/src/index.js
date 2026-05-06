@@ -7,6 +7,13 @@ import catalogIO from "@/catalog.js";
 import git from "@/git.js";
 import federationGit from "@/federation.js";
 
+async function SELECT({ fs, dir, storage, federation }, mind, query) {
+    //const dirMind = await catalog.locate(fs, dir, mind);
+
+    //await storage.sparql(dirMind, { kind: "SELECT", query });
+    return db.selectStream(fs, mind, query);
+}
+
 async function DESCRIBE({ fs, dir, storage, federation }, mind, query) {
     //const dirMind = await catalog.locate(fs, dir, mind);
 
@@ -40,8 +47,8 @@ async function sparql(
     if (graph === "root") return catalog.sparql({ kind, query });
 
     switch (kind) {
-        //    //case "SELECT":
-        //    //    return SELECT(providers, graph, query);
+        case "SELECT":
+            return SELECT({ fs, catalog, federation, storage }, graph, query);
 
         case "DESCRIBE":
             return DESCRIBE({ fs, catalog, federation, storage }, graph, query);
