@@ -7,25 +7,28 @@ import catalogIO from "@/catalog.js";
 import git from "@/git.js";
 import federationGit from "@/federation.js";
 
-async function SELECT({ fs, dir, storage, federation }, mind, query) {
-    //const dirMind = await catalog.locate(fs, dir, mind);
+async function SELECT({ fs, dir, catalog }, mind, query) {
+    const dirMind = await catalog.locate(mind);
 
-    //await storage.sparql(dirMind, { kind: "SELECT", query });
-    return db.selectStream(fs, mind, query);
+    const storage = storageCSVS(fs, dirMind);
+
+    return storage.sparql({ kind: "SELECT", query });
 }
 
-async function DESCRIBE({ fs, dir, storage, federation }, mind, query) {
-    //const dirMind = await catalog.locate(fs, dir, mind);
+async function DESCRIBE({ fs, dir, catalog }, mind, query) {
+    const dirMind = await catalog.locate(mind);
 
-    //await storage.sparql(dirMind, { kind: "DESCRIBE", query });
-    return db.buildRecord(fs, mind, query);
+    const storage = storageCSVS(fs, dirMind);
+
+    return storage.sparql({ kind: "DESCRIBE", query });
 }
 
-async function DELETE({ fs, dir, storage, federation }, mind, query) {
-    //const dirMind = await catalog.locate(fs, dir, mind);
+async function DELETE({ fs, dir, federation, catalog }, mind, query) {
+    const dirMind = await catalog.locate(mind);
 
-    //await storage.sparql(dirMind, { kind: "DELETE", query });
-    await db.deleteRecord(fs, mind, query);
+    const storage = storageCSVS(fs, dirMind);
+
+    await storage.sparql({ kind: "DELETE", query });
 
     //await federation.settle();
     await git.commit(fs, mind);
@@ -35,12 +38,14 @@ async function DELETE({ fs, dir, storage, federation }, mind, query) {
     } catch {
         //do nothing
     }
+
+    if (mind === "root") return catalog.retire(query);
 }
 
 async function UPDATE({ fs, dir, storage, federation }, mind, query) {
-    //const dirMind = await catalog.locate(fs, dir, mind);
+    //const dirMind = await catalog.locate(mind);
 
-    //await storage.sparql(dirMind, { kind: "DELETE", query });
+    //await storage.sparql(dirMind, { kind: "UPDATE", query });
     await updateRecord(fs, mind, query);
 
     //await federation.settle();
@@ -51,51 +56,40 @@ async function UPDATE({ fs, dir, storage, federation }, mind, query) {
     //} catch {
     //    //do nothing
     //}
+
+    //if (graph === "root") return catalog.induct(query);
 }
 
-async function sparql(
-    { fs, catalog, federation, storage },
-    { kind, graph, query },
-) {
+async function sparql(providers, { kind, graph, query }) {
     // TODO accept sparql string and infer kind with haydee
     // const { kind, graph, inner } = await haydee.classify(sparql);
 
-    if (graph === "root") return catalog.sparql({ kind, query });
-
     switch (kind) {
         case "SELECT":
-            return SELECT({ fs, catalog, federation, storage }, graph, query);
+            return SELECT(providers, graph, query);
 
         case "DESCRIBE":
-            return DESCRIBE({ fs, catalog, federation, storage }, graph, query);
+            return DESCRIBE(providers, graph, query);
 
         case "UPDATE":
-            return UPDATE({ fs, catalog, federation, storage }, graph, query);
+            return UPDATE(providers, graph, query);
 
         case "DELETE":
-            await DELETE({ fs, catalog, federation, storage }, graph, query);
+            await DELETE(providers, graph, query);
     }
 }
 
 export default async function createMindZoo({ fs, dir }) {
-    const storage = storageCSVS(fs);
-
     const federation = federationGit(fs);
 
-    const catalog = catalogIO({ fs, dir, storage, federation });
+    const catalog = catalogIO({ fs, dir, federation });
 
     await catalog.rebuild();
 
-    const providers = { fs, storage, federation, catalog };
+    const providers = { fs, dir, catalog, federation };
 
     return {
         ...providers,
-        sparql: async (query) => sparql(providers, query),
-        createCatalog,
-        open,
-        selectStream: db.selectStream,
-        updateRecord,
-        deleteRecord,
-        buildRecord,
+        sparql: (query) => sparql(providers, query),
     };
 }

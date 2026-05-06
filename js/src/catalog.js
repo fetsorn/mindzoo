@@ -8,10 +8,11 @@ import {
 } from "@/pure.js";
 import { rimraf } from "./io.js";
 import git from "./git.js";
+import storageCSVS from "@/storage.js";
 import catalogSchemaRecord from "@/catalog_schema_record.json";
 import catalogBranchRecords from "@/catalog_branch_records.json";
 
-async function rebuild({ fs, dir, federation, storage }) {
+async function rebuild({ fs, dir, federation }) {
     const dirCatalog = path.join(dir, "root");
 
     const rootExists = (await fs.promises.readdir(dir)).includes("root");
@@ -65,7 +66,7 @@ async function rebuild({ fs, dir, federation, storage }) {
     await federation.settle("root");
 }
 
-async function locate(fs, dir, mind) {
+async function locate({ fs, dir }, mind) {
     const existingMind = (await fs.promises.readdir(dir)).find(
         (m) => m === mind || m.startsWith(mind + "-"),
     );
@@ -77,42 +78,13 @@ async function locate(fs, dir, mind) {
     }
 }
 
-async function SELECT({ fs, dir, storage, federation }, query) {
-    const dirMind = await locate(fs, dir, "root");
-
-    return db.selectStream(fs, "root", query);
-}
-
-async function DESCRIBE({ fs, dir, storage, federation }, query) {
-    const dirMind = await locate(fs, dir, "root");
-
-    return db.buildRecord(fs, "root", query);
-}
-
-async function DELETE({ fs, dir, federation, storage }, query) {
-    const dirCatalog = await locate(fs, dir, "root");
-
-    //await storage.sparql(dirMind, { kind: "DELETE", query });
-    // do we even need mutation or should just rebuild
-    await db.deleteRecord(fs, "root", query);
-
-    //await federation.settle();
-    await git.commit(fs, "root");
-
-    try {
-        await git.resolve(fs, "root");
-    } catch {
-        // do nothing
-    }
-
-    const dirMind = await locate(fs, dir, query.mind);
+async function retire({ fs, dir, federation }, record) {
+    const dirMind = await locate({ fs, dir }, query.mind);
 
     await rimraf(fs, dirMind);
 }
 
-async function UPDATE({ fs, dir, federation, storage }, query) {
-    const dirCatalog = await locate(fs, dir, "root");
-
+async function induct({ fs, dir, federation }, record) {
     //await storage.sparql(dirMind, { kind: "DELETE", query });
     // do we even need mutation or should just rebuild
     await updateRecord(fs, "root", query);
@@ -123,30 +95,13 @@ async function UPDATE({ fs, dir, federation, storage }, query) {
     //const syncResult = await git.resolve(fs, mind);
 }
 
-async function sparql(providers, { kind, query }) {
-    switch (kind) {
-        case "SELECT":
-            return SELECT(providers, query);
-
-        case "DESCRIBE":
-            return DESCRIBE(providers, query);
-
-        case "UPDATE":
-            return UPDATE(providers, query);
-
-        case "DELETE":
-            await DELETE(providers, query);
-    }
-}
-
 export default (providers) => {
     return {
-        locate: async (mind) => resolve(providers, mind),
-        //induct: (mind) => induct(providers, mind),
-        //retire: (mind) => retire(providers, mind),
+        locate: (mind) => locate(providers, mind),
+        induct: (mind) => induct(providers, mind),
+        retire: (mind) => retire(providers, mind),
         //EXPORT: (mind) => zip(providers, mind),
-        sparql: async (query) => sparql(providers, query),
-        rebuild: async () => rebuild(providers),
+        rebuild: () => rebuild(providers),
         //settle,
     };
 };
