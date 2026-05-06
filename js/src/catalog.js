@@ -83,8 +83,6 @@ async function locate(fs, dir, mind) {
 }
 
 async function describe({ fs, dir, storage, federation }, query) {
-    await rebuild({ fs, dir, federation, storage });
-
     const dirMind = await locate(fs, dir, "root");
 
     return db.buildRecord(fs, "root", query);
@@ -113,6 +111,7 @@ export default (providers) => {
         //retire: (mind) => retire(providers, mind),
         //EXPORT: (mind) => zip(providers, mind),
         sparql: (query) => sparql(providers, query),
+        rebuild: () => rebuild(providers),
         //settle,
     };
 };
