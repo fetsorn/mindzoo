@@ -82,10 +82,25 @@ async function locate(fs, dir, mind) {
     }
 }
 
-async function describe({ fs, dir, storage, federation }, query) {
+async function DESCRIBE({ fs, dir, storage, federation }, query) {
     const dirMind = await locate(fs, dir, "root");
 
     return db.buildRecord(fs, "root", query);
+}
+
+async function DELETE({ fs, dir, storage, federation }, query) {
+    const dirMind = await catalog.locate(fs, dir, mind);
+
+    //await storage.sparql(dirMind, { kind: "DELETE", query });
+    // do we even need mutation or should just rebuild
+    await db.deleteRecord(fs, "root", query);
+
+    //await federation.settle();
+    await git.commit(fs, "root");
+
+    const syncResult = await git.resolve(fs, mind);
+
+    await rimraf(fs, dirMind);
 }
 
 async function sparql(providers, { kind, query }) {
@@ -94,19 +109,19 @@ async function sparql(providers, { kind, query }) {
         //    return SELECT(providers, query);
 
         case "DESCRIBE":
-            return describe(providers, query);
+            return DESCRIBE(providers, query);
 
         //case "UPDATE":
         //    return UPDATE(providers, query);
 
-        //case "DELETE":
-        //    await DELETE(providers, query);
+        case "DELETE":
+            await DELETE(providers, query);
     }
 }
 
 export default (providers) => {
     return {
-        //locate: (mind) => resolve(providers, mind),
+        locate: (mind) => resolve(providers, mind),
         //induct: (mind) => induct(providers, mind),
         //retire: (mind) => retire(providers, mind),
         //EXPORT: (mind) => zip(providers, mind),
