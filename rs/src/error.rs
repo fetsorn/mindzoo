@@ -57,9 +57,11 @@ impl From<serde_json::Error> for Error {
     }
 }
 
-impl From<zip::result::ZipError> for Error {
-    fn from(ctx: zip::result::ZipError) -> Error {
-        Error { inner: ctx.into() }
+impl From<csvs::Error> for Error {
+    fn from(ctx: csvs::Error) -> Error {
+        Error {
+            inner: ctx.to_string().into(),
+        }
     }
 }
 
@@ -92,7 +94,6 @@ impl Serialize for Error {
     where
         S: Serializer,
     {
-        // SEC-18: only expose top-level message to frontend, not full error chain
         #[derive(Serialize)]
         struct JsonError {
             message: String,
