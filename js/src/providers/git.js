@@ -3,6 +3,16 @@ import diff3Merge from "diff3";
 // move to @fetsorn/isogit-lfs
 import { addLFS } from "@/providers/lfs.js";
 
+async function exists(fs, dir) {
+  try {
+    await fs.promises.stat(dir);
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function gitinit(fs, dir) {
   const hasGit = (await fs.promises.readdir(dir)).includes(".git");
 
@@ -14,18 +24,14 @@ export async function gitinit(fs, dir) {
 }
 
 export async function clone(fs, dir, remote) {
-  const hasGit = (await fs.promises.readdir(dir)).includes(".git");
-
-  if (hasGit) {
-    return;
-  }
+  const http = await import("isomorphic-git/http/web");
 
   const options = {
     fs,
     http,
     dir,
     url: remote.url,
-    singleBranch: true,
+    //singleBranch: true,
   };
 
   if (remote.token !== undefined) {
@@ -34,21 +40,7 @@ export async function clone(fs, dir, remote) {
     });
   }
 
-  await git.clone(options);
-
-  // if clone is successful, try to set token
-  try {
-    if (remote.token !== undefined) {
-      await git.setConfig({
-        fs,
-        dir,
-        path: "remote.origin.token",
-        value: remote.token,
-      });
-    }
-  } catch (e) {
-    console.error("failed to save auth token to git config:", e);
-  }
+  return git.clone(options);
 }
 
 /**
@@ -314,8 +306,10 @@ export async function resolve(fs, dir, resolutions) {
 }
 
 async function settle(fs, dir, origin) {
+  const dirExists = await exists(fs, dir);
+
   // clone
-  if (origin) {
+  if (origin && !dirExists) {
     await clone(fs, dir, origin);
   }
 
@@ -342,7 +336,7 @@ async function settle(fs, dir, origin) {
 
 export default (fs) => {
   return {
-    settle: (dir) => settle(fs, dir),
+    settle: (dir, origin) => settle(fs, dir, origin),
     getOrigin: (dir) => getOrigin(fs, dir),
   };
 };

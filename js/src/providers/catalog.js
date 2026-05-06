@@ -94,12 +94,17 @@ async function induct({ fs, dir, federation }, record) {
 
   const name = Array.isArray(record.name) ? record.name[0] : record.name;
 
-  const origin = Array.isArray(record.origin_url)
+  const origin_url = Array.isArray(record.origin_url)
     ? record.origin_url[0]
     : record.origin_url;
 
-  // if record has origin_url it can be cloned
-  const hasURL = origin !== undefined && origin.origin_url !== undefined;
+  const origin = {
+    url: origin_url !== undefined ? origin_url.origin_url : origin_url,
+    token:
+      origin_url !== undefined && typeof origin_url === "object"
+        ? origin_url.origin_token
+        : undefined,
+  };
 
   // search root for mind
   const dirMind = await locate({ fs, dir }, record.mind);
@@ -107,6 +112,9 @@ async function induct({ fs, dir, federation }, record) {
   const isNew = dirMind === undefined;
 
   const dirMindNew = `${dir}/${mind}${name !== undefined ? `-${name}` : ""}`;
+
+  // if record has origin_url it can be cloned
+  const hasURL = origin.url !== undefined;
 
   if (isNew) {
     if (hasURL) {
