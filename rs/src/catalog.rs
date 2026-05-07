@@ -179,7 +179,7 @@ impl Catalog {
         }
 
         // settle the root catalog git repo
-        federation.settle(&dir_catalog, None)?;
+        federation.settle(&dir_catalog, None).await?;
 
         Ok(())
     }
@@ -216,7 +216,7 @@ impl Catalog {
         if is_new {
             if let Some(ref origin) = origin {
                 // clone
-                federation.settle(&dir_mind_new, Some(origin))?;
+                federation.settle(&dir_mind_new, Some(origin)).await?;
             } else {
                 fs::create_dir_all(&dir_mind_new).await?;
             }
@@ -245,7 +245,7 @@ impl Catalog {
         }
 
         // settle
-        federation.settle(&dir_mind_new, origin.as_ref())?;
+        federation.settle(&dir_mind_new, origin.as_ref()).await?;
 
         Ok(())
     }

@@ -89,7 +89,7 @@ impl Mindzoo {
                 catalog::drain_stream_boxed(stream).await?;
 
                 // settle git
-                self.federation.settle(&dir_mind, None)?;
+                self.federation.settle(&dir_mind, None).await?;
 
                 // if updating a mind record in root, induct it
                 if graph == "root" && query.base == "mind" {
@@ -106,7 +106,7 @@ impl Mindzoo {
                 catalog::drain_stream_boxed(stream).await?;
 
                 // settle git
-                self.federation.settle(&dir_mind, None)?;
+                self.federation.settle(&dir_mind, None).await?;
 
                 // if deleting a mind record from root, retire it
                 if graph == "root" && query.base == "mind" {
