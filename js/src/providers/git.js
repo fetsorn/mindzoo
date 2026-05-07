@@ -320,7 +320,7 @@ async function settle(fs, dir, origin) {
   await commit(fs, dir);
 
   // set remote and token in .git/config
-  if (origin) {
+  if (origin !== undefined && origin.url !== undefined) {
     await setOrigin(fs, dir, origin);
   }
 

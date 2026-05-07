@@ -23,13 +23,19 @@ async function DELETE({ fs, dir, catalog, federation }, mind, query) {
 
   const storage = csvs(fs, dirMind);
 
-  await storage.sparql({ kind: "DELETE", query });
+  await Array.fromAsync(storage.sparql({ kind: "DELETE", query }));
 
   await federation.settle(dirMind);
 
   const isMind = mind === "root" && query._ === "mind";
 
-  if (isMind) return catalog.retire(query.mind);
+  if (isMind) await catalog.retire(query.mind);
+
+  return new ReadableStream({
+    async pull(controller) {
+      controller.close();
+    },
+  });
 }
 
 async function UPDATE({ fs, dir, catalog, federation }, mind, query) {
@@ -37,13 +43,19 @@ async function UPDATE({ fs, dir, catalog, federation }, mind, query) {
 
   const storage = csvs(fs, dirMind);
 
-  await storage.sparql({ kind: "UPDATE", query });
+  await Array.fromAsync(storage.sparql({ kind: "UPDATE", query }));
 
   await federation.settle(dirMind);
 
   const isMind = mind === "root" && query._ === "mind";
 
-  if (isMind) return catalog.induct(query);
+  if (isMind) await catalog.induct(query);
+
+  return new ReadableStream({
+    async pull(controller) {
+      controller.close();
+    },
+  });
 }
 
 async function sparql(providers, { kind, graph, query }) {

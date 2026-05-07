@@ -1,6 +1,6 @@
 import csvs from "@fetsorn/csvs-js";
 
-async function SELECT(fs, dir, query) {
+function SELECT(fs, dir, query) {
   return csvs.selectRecordStreamPull({
     fs,
     dir,
@@ -9,29 +9,41 @@ async function SELECT(fs, dir, query) {
   });
 }
 
-async function DESCRIBE(fs, dir, query) {
-  return csvs.buildRecord({ fs, dir, query: [query] });
-}
+function DESCRIBE(fs, dir, query) {
+  return new ReadableStream({
+    async pull(controller) {
+      const record = await csvs.buildRecord({ fs, dir, query: [query] });
 
-async function DELETE(fs, dir, query) {
-  return csvs.deleteRecord({
-    fs,
-    dir,
-    query,
+      controller.enqueue(record);
+
+      controller.close();
+    },
   });
 }
 
-async function UPDATE(fs, dir, query) {
-  await csvs.init({ fs, dir });
+function DELETE(fs, dir, query) {
+  return new ReadableStream({
+    async pull(controller) {
+      await csvs.deleteRecord({ fs, dir, query });
 
-  return csvs.updateRecord({
-    fs,
-    dir,
-    query,
+      controller.close();
+    },
   });
 }
 
-async function sparql(providers, dir, { kind, graph, query }) {
+function UPDATE(fs, dir, query) {
+  return new ReadableStream({
+    async pull(controller) {
+      await csvs.init({ fs, dir });
+
+      await csvs.updateRecord({ fs, dir, query });
+
+      controller.close();
+    },
+  });
+}
+
+function sparql(providers, dir, { kind, graph, query }) {
   // TODO accept sparql string and infer kind with haydee
   // const { kind, graph, inner } = await haydee.classify(sparql);
   // NOTE graph should be used to say "to schema named graph"
@@ -48,7 +60,7 @@ async function sparql(providers, dir, { kind, graph, query }) {
       return UPDATE(providers, dir, query);
 
     case "DELETE":
-      await DELETE(providers, dir, query);
+      return DELETE(providers, dir, query);
   }
 }
 

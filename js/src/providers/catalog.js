@@ -36,10 +36,14 @@ async function rebuild({ fs, dir, federation }) {
 
   const storage = csvs(fs, dirCatalog);
 
-  await storage.sparql({ kind: "UPDATE", query: catalogSchemaRecord });
+  await Array.fromAsync(
+    storage.sparql({ kind: "UPDATE", query: catalogSchemaRecord }),
+  );
 
   for (const branchRecord of catalogBranchRecords) {
-    await storage.sparql({ kind: "UPDATE", query: branchRecord });
+    await Array.fromAsync(
+      storage.sparql({ kind: "UPDATE", query: branchRecord }),
+    );
   }
 
   const minds = await fs.promises.readdir(dir);
@@ -55,14 +59,14 @@ async function rebuild({ fs, dir, federation }) {
     const storageMind = csvs(fs, dirMind);
 
     const [schemaRecord] = await Array.fromAsync(
-      await storageMind.sparql({
+      storageMind.sparql({
         kind: "SELECT",
         query: { _: "_" },
       }),
     );
 
     const branchRecords = await Array.fromAsync(
-      await storageMind.sparql({
+      storageMind.sparql({
         kind: "SELECT",
         query: { _: "branch" },
       }),
@@ -82,7 +86,7 @@ async function rebuild({ fs, dir, federation }) {
     );
 
     // write to catalog
-    await storage.sparql({ kind: "UPDATE", query: mind });
+    await Array.fromAsync(storage.sparql({ kind: "UPDATE", query: mind }));
   }
 
   // init & commit catalog
@@ -131,10 +135,14 @@ async function induct({ fs, dir, federation }, record) {
 
   const [schemaRecord, ...metaRecords] = mindToRecords(record.branch);
 
-  await storage.sparql({ kind: "UPDATE", query: schemaRecord });
+  await Array.fromAsync(
+    storage.sparql({ kind: "UPDATE", query: schemaRecord }),
+  );
 
   for (const metaRecord of metaRecords) {
-    await storage.sparql({ kind: "UPDATE", query: metaRecord });
+    await Array.fromAsync(
+      storage.sparql({ kind: "UPDATE", query: metaRecord }),
+    );
   }
 
   // gitinit add commit set remote & token
