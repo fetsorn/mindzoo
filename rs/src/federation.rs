@@ -17,6 +17,8 @@ impl Federation {
     /// If origin is provided and dir doesn't exist, clone.
     /// Otherwise: init if needed, commit, set remote, resolve.
     pub fn settle(&self, dir: &Path, origin: Option<&Origin>) -> Result<()> {
+        log::info!("federation::settle dir={} has_origin={}", dir.display(), origin.is_some());
+
         // clone if origin provided and dir doesn't exist
         if let Some(origin) = origin {
             if !dir.exists() {

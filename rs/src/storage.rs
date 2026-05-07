@@ -23,6 +23,7 @@ impl Storage {
         kind: Kind,
         query: Entry,
     ) -> Pin<Box<dyn Stream<Item = Result<Entry>> + Send>> {
+        log::info!("storage::sparql kind={:?} dir={}", kind, self.dir.display());
         let dir = self.dir.clone();
 
         match kind {
@@ -41,15 +42,21 @@ fn select(dir: PathBuf, query: Entry) -> impl Stream<Item = Result<Entry>> {
     };
 
     let stream = try_stream! {
+        log::info!("storage::select polled dir={}", dir.display());
         let dataset = Dataset::open(&dir).await.map_err(crate::Error::from)?;
+        log::info!("storage::select dataset opened");
 
         let record_stream = dataset.select_record_stream(input, true);
 
         futures_util::pin_mut!(record_stream);
 
+        let mut count = 0usize;
         while let Some(entry) = futures_util::StreamExt::next(&mut record_stream).await {
+            count += 1;
+            log::info!("storage::select yielding entry #{count}");
             yield entry.map_err(crate::Error::from)?;
         }
+        log::info!("storage::select done, yielded {count} entries");
     };
 
     stream
@@ -63,13 +70,28 @@ fn describe(dir: PathBuf, query: Entry) -> impl Stream<Item = Result<Entry>> {
     }
 }
 
+/// Open a dataset, creating it if it doesn't exist yet.
+/// Mirrors SPARQL semantics: UPDATE creates the named graph on first write.
+async fn open_or_create(dir: &PathBuf) -> crate::Result<Dataset> {
+    match Dataset::open(dir).await {
+        Ok(ds) => Ok(ds),
+        Err(_) => Dataset::create(dir, false).await.map_err(crate::Error::from),
+    }
+}
+
 fn update(dir: PathBuf, query: Entry) -> impl Stream<Item = Result<Entry>> {
     async_stream::stream! {
+        log::info!("storage::update polled dir={}", dir.display());
         let result: Result<()> = async {
-            let dataset = Dataset::open(&dir).await.map_err(crate::Error::from)?;
+            let dataset = open_or_create(&dir).await?;
             dataset.update_record(vec![query]).await.map_err(crate::Error::from)?;
             Ok(())
         }.await;
+
+        match &result {
+            Ok(()) => log::info!("storage::update ok"),
+            Err(e) => log::error!("storage::update error: {e}"),
+        }
 
         if let Err(e) = result {
             yield Err(e);

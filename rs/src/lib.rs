@@ -31,10 +31,13 @@ pub struct Mindzoo {
 impl Mindzoo {
     /// Create a new Mindzoo instance and rebuild the root catalog.
     pub async fn new(dir: PathBuf) -> Result<Self> {
+        log::info!("mindzoo::new dir={}", dir.display());
         let catalog = Catalog::new(dir.clone());
         let federation = Federation::new();
 
+        log::info!("mindzoo: rebuilding catalog");
         catalog.rebuild(&federation).await?;
+        log::info!("mindzoo: catalog rebuilt");
 
         Ok(Mindzoo {
             catalog,
@@ -54,15 +57,29 @@ impl Mindzoo {
         graph: &str,
         query: Entry,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<Entry>> + Send>>> {
+        log::info!("mindzoo::sparql kind={:?} graph={} query={}", kind, graph, query);
+
         let dir_mind = self
             .catalog
             .locate(graph)
             .await?
             .ok_or_else(|| Error::from_message(format!("mind not found: {graph}")))?;
 
+        log::info!("mindzoo::sparql located mind at {}", dir_mind.display());
+
         let storage = Storage::new(dir_mind.clone());
 
         match kind {
+            Kind::Describe if graph == "root" && query.base == "mind" && query.base_value.as_deref() == Some("root") => {
+                // Root is skipped in rebuild, so it has no mind entry in the catalog.
+                // Build its self-description dynamically from its own schema + branches.
+                let entry = self
+                    .catalog
+                    .describe_mind("root", &self.federation)
+                    .await?;
+                Ok(Box::pin(futures_util::stream::once(async { Ok(entry) })))
+            }
+
             Kind::Select | Kind::Describe => Ok(storage.sparql(kind, query)),
 
             Kind::Update => {

@@ -67,6 +67,57 @@ impl Catalog {
         Ok(None)
     }
 
+    /// Describe a mind by reading its schema, branches, and git origin.
+    /// Builds the mind entry on the fly rather than reading from the catalog.
+    pub async fn describe_mind(
+        &self,
+        mind: &str,
+        federation: &Federation,
+    ) -> Result<Entry> {
+        let dir_mind = self
+            .locate(mind)
+            .await?
+            .ok_or_else(|| Error::from_message(format!("mind not found: {mind}")))?;
+
+        let mind_path_str = dir_mind
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+
+        let (uuid, name) = match mind_path_str.split_once('-') {
+            Some((u, n)) => (u.to_string(), Some(n.to_string())),
+            None => (mind_path_str.clone(), None),
+        };
+
+        let mind_storage = Storage::new(dir_mind.clone());
+
+        let schema_query: Entry = json!({"_": "_"}).try_into()?;
+        let schema_records = collect_stream(
+            mind_storage.sparql(Kind::Select, schema_query),
+        ).await?;
+
+        let branch_query: Entry = json!({"_": "branch"}).try_into()?;
+        let branch_records = collect_stream(
+            mind_storage.sparql(Kind::Select, branch_query),
+        ).await?;
+
+        let origin = federation.get_origin(&dir_mind);
+
+        let mind_value = records_to_mind(
+            &uuid,
+            name.as_deref(),
+            schema_records.first(),
+            &branch_records,
+            origin.as_ref().map(|o| o.url.as_str()),
+            origin.as_ref().and_then(|o| o.token.as_deref()),
+        );
+
+        let mind_entry: Entry = mind_value.try_into()?;
+        log::info!("catalog::describe_mind built entry for {mind}");
+        Ok(mind_entry)
+    }
+
     /// Remove a mind directory.
     pub async fn retire(&self, mind: &str) -> Result<()> {
         if let Some(dir_mind) = self.locate(mind).await? {
@@ -80,12 +131,15 @@ impl Catalog {
     /// Scans all mind directories, reads their schema + branch records,
     /// and writes mind entries to the root catalog dataset.
     pub async fn rebuild(&self, federation: &Federation) -> Result<()> {
+        log::info!("catalog::rebuild dir={}", self.dir.display());
+
         // remove existing root catalog
         self.retire("root").await?;
 
         let dir_catalog = self.dir.join("root");
 
         fs::create_dir_all(&dir_catalog).await?;
+        log::info!("catalog::rebuild created {}", dir_catalog.display());
 
         // create fresh csvs dataset and write catalog schema
         let catalog_storage = Storage::new(dir_catalog.clone());
@@ -112,43 +166,15 @@ impl Catalog {
                 continue;
             }
 
-            let dir_mind = dir_entry.path();
+            log::info!("catalog::rebuild scanning mind {}", mind_path_str);
 
-            // parse uuid and name from directory name (uuid-name format)
-            let (uuid, name) = match mind_path_str.split_once('-') {
-                Some((u, n)) => (u.to_string(), Some(n.to_string())),
-                None => (mind_path_str.clone(), None),
+            // parse uuid from directory name (uuid or uuid-name format)
+            let uuid = match mind_path_str.split_once('-') {
+                Some((u, _)) => u,
+                None => &mind_path_str,
             };
 
-            // read schema from mind dataset
-            let mind_storage = Storage::new(dir_mind.clone());
-
-            let schema_query: Entry = json!({"_": "_"}).try_into()?;
-            let schema_records = collect_stream(
-                mind_storage.sparql(Kind::Select, schema_query),
-            )
-            .await?;
-
-            let branch_query: Entry = json!({"_": "branch"}).try_into()?;
-            let branch_records = collect_stream(
-                mind_storage.sparql(Kind::Select, branch_query),
-            )
-            .await?;
-
-            // get remote origin from git
-            let origin = federation.get_origin(&dir_mind);
-
-            // build mind entry mirroring JS recordsToMind
-            let mind_value = records_to_mind(
-                &uuid,
-                name.as_deref(),
-                schema_records.first(),
-                &branch_records,
-                origin.as_ref().map(|o| o.url.as_str()),
-                origin.as_ref().and_then(|o| o.token.as_deref()),
-            );
-
-            let mind_entry: Entry = mind_value.try_into()?;
+            let mind_entry = self.describe_mind(uuid, federation).await?;
             drain_stream_boxed(catalog_storage.sparql(Kind::Update, mind_entry)).await?;
         }
 
@@ -233,8 +259,12 @@ pub(crate) async fn drain_stream_boxed(
 ) -> Result<()> {
     futures_util::pin_mut!(stream);
     while let Some(result) = stream.next().await {
+        if let Err(ref e) = result {
+            log::error!("drain_stream_boxed propagating error: {e}");
+        }
         result?;
     }
+    log::info!("drain_stream_boxed completed ok");
     Ok(())
 }
 
