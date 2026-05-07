@@ -11,6 +11,20 @@ async function SELECT({ fs, dir, catalog }, mind, query) {
 }
 
 async function DESCRIBE({ fs, dir, catalog }, mind, query) {
+  const isCatalog =
+    mind === "root" && query._ === "mind" && query.mind === "root";
+
+  if (isCatalog) {
+    const entry = await catalog.describe(query.mind);
+
+    return new ReadableStream({
+      async pull(controller) {
+        controller.enqueue(entry);
+        controller.close();
+      },
+    });
+  }
+
   const dirMind = await catalog.locate(mind);
 
   const storage = csvs(fs, dirMind);

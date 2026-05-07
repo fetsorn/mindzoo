@@ -27,6 +27,34 @@ async function retire({ fs, dir }, mind) {
   }
 }
 
+async function describe({ fs, dir, federation }, mind) {
+  const dirMind = await locate({ fs, dir }, mind);
+
+  const mindPath = path.basename(dirMind);
+
+  const [uuid, name] = mindPath.split("-");
+
+  const storageMind = csvs(fs, dirMind);
+
+  const [schemaRecord] = await Array.fromAsync(
+    storageMind.sparql({
+      kind: "SELECT",
+      query: { _: "_" },
+    }),
+  );
+
+  const branchRecords = await Array.fromAsync(
+    storageMind.sparql({
+      kind: "SELECT",
+      query: { _: "branch" },
+    }),
+  );
+
+  const { url, token } = await federation.getOrigin(dirMind);
+
+  return recordsToMind(uuid, name, schemaRecord, branchRecords, url, token);
+}
+
 async function rebuild({ fs, dir, federation }) {
   await retire({ fs, dir }, "root");
 
@@ -49,41 +77,14 @@ async function rebuild({ fs, dir, federation }) {
   const minds = await fs.promises.readdir(dir);
 
   for (const mindPath of minds) {
-    // get name from layout
+    // skip the root catalog itself
+    if (mindPath === "root") continue;
+
     const dirMind = path.join(dir, mindPath);
 
-    // get name from uuid-name
     const [uuid, name] = mindPath.split("-");
 
-    // fetch schema from mind
-    const storageMind = csvs(fs, dirMind);
-
-    const [schemaRecord] = await Array.fromAsync(
-      storageMind.sparql({
-        kind: "SELECT",
-        query: { _: "_" },
-      }),
-    );
-
-    const branchRecords = await Array.fromAsync(
-      storageMind.sparql({
-        kind: "SELECT",
-        query: { _: "branch" },
-      }),
-    );
-
-    // get remote and token from git
-    const { url, token } = await federation.getOrigin(dirMind);
-
-    // records to mind
-    const mind = recordsToMind(
-      uuid,
-      name,
-      schemaRecord,
-      branchRecords,
-      url,
-      token,
-    );
+    const mind = await describe({ fs, dir, federation }, uuid);
 
     // write to catalog
     await Array.fromAsync(storage.sparql({ kind: "UPDATE", query: mind }));
@@ -161,6 +162,7 @@ export default (providers) => {
     retire: (mind) => retire(providers, mind),
     rebuild: () => rebuild(providers),
     induct: (record) => induct(providers, record),
+    describe: (mind) => describe(providers, mind),
     archive: (mind) => archive(providers, mind),
   };
 };
