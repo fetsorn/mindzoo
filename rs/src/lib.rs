@@ -45,6 +45,11 @@ impl Mindzoo {
         })
     }
 
+    /// Find the full path for a mind by UUID prefix.
+    pub async fn locate(&self, mind: &str) -> Result<Option<PathBuf>> {
+        self.catalog.locate(mind).await
+    }
+
     /// Single entry point. Returns a stream of Entry values.
     ///
     /// - SELECT: stream of matching records

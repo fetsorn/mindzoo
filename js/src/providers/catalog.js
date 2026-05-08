@@ -1,6 +1,5 @@
 import path from "path";
 import csvs from "@/providers/csvs.js";
-import { zip } from "@/providers/zip.js";
 import { recordsToMind, mindToRecords } from "@/providers/pure.js";
 import catalogSchemaRecord from "@/providers/catalog_schema_record.json";
 import catalogBranchRecords from "@/providers/catalog_branch_records.json";
@@ -162,12 +161,6 @@ async function induct({ fs, dir, federation }, record) {
   await federation.settle(dirMindNew, origin);
 }
 
-async function archive({ fs, dir }, mind) {
-  const dirMind = await locate({ fs, dir }, mind);
-
-  return zip(fs, dirMind);
-}
-
 export default (providers) => {
   return {
     locate: (mind) => locate(providers, mind),
@@ -175,6 +168,5 @@ export default (providers) => {
     rebuild: () => rebuild(providers),
     induct: (record) => induct(providers, record),
     describe: (mind) => describe(providers, mind),
-    archive: (mind) => archive(providers, mind),
   };
 };
