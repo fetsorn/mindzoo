@@ -125,6 +125,18 @@ async function induct({ fs, dir, federation }, record) {
     if (hasURL) {
       // clone
       await federation.settle(dirMindNew, origin);
+
+      const mindRecord = await describe({ fs, dir, federation }, record.mind);
+
+      const dirCatalog = path.join(dir, "root");
+
+      const storage = csvs(fs, dirCatalog);
+
+      await Array.fromAsync(
+        storage.sparql({ kind: "UPDATE", query: mindRecord }),
+      );
+
+      return;
     } else {
       await fs.promises.mkdir(dirMindNew);
     }
