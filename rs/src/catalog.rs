@@ -217,6 +217,15 @@ impl Catalog {
             if let Some(ref origin) = origin {
                 // clone
                 federation.settle(&dir_mind_new, Some(origin)).await?;
+
+                // read actual schema from cloned repo and write to catalog
+                let mind_entry = self.describe_mind(mind, federation).await?;
+
+                let dir_catalog = self.dir.join("root");
+                let catalog_storage = Storage::new(dir_catalog);
+                drain_stream_boxed(catalog_storage.sparql(Kind::Update, mind_entry)).await?;
+
+                return Ok(());
             } else {
                 fs::create_dir_all(&dir_mind_new).await?;
             }
