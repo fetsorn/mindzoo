@@ -215,8 +215,36 @@ function mergeDriverFactory(conflicts, resolutions) {
   };
 }
 
+async function canReach(url, token) {
+  if (!url) return false;
+
+  try {
+    const headers = {};
+
+    if (token) {
+      headers["Authorization"] = `token ${token}`;
+    }
+
+    const probe = `${url.replace(/\/$/, "")}/info/refs?service=git-upload-pack`;
+
+    const response = await fetch(probe, {
+      method: "GET",
+      headers,
+      signal: AbortSignal.timeout(5000),
+    });
+
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function resolve(fs, dir, resolutions) {
   const remote = await getOrigin(fs, dir);
+
+  if (!(await canReach(remote.url, remote.token))) {
+    return { ok: true };
+  }
 
   // soft-serve uses "token ${remote.token}". first word CAN be Token
   // gitea uses "token ${remote.token}". first word MUST be lower-case "token"
