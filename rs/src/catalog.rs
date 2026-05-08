@@ -314,19 +314,45 @@ fn records_to_mind(
     url: Option<&str>,
     token: Option<&str>,
 ) -> Value {
-    let branch_values: Vec<Value> = branch_records
-        .iter()
-        .map(|br| {
-            let mut v = br.clone().into_value();
+    // collect all unique branch names from the schema (both trunks and leaves)
+    let branch_values: Vec<Value> = if let Some(schema) = schema_record {
+        let mut all_branches: Vec<String> = Vec::new();
 
-            // find trunks: which schema keys list this branch as a leaf
-            if let Some(schema) = schema_record {
-                let branch_name = br.base_value.as_deref().unwrap_or("");
+        for (trunk, leaves) in &schema.leaves {
+            if !all_branches.contains(trunk) {
+                all_branches.push(trunk.clone());
+            }
+            for leaf_entry in leaves {
+                if let Some(leaf_name) = leaf_entry.base_value.as_deref() {
+                    if !all_branches.contains(&leaf_name.to_string()) {
+                        all_branches.push(leaf_name.to_string());
+                    }
+                }
+            }
+        }
+
+        all_branches
+            .iter()
+            .map(|branch_name| {
+                // start with metaRecord if one exists, otherwise empty
+                let mut v = branch_records
+                    .iter()
+                    .find(|br| br.base_value.as_deref() == Some(branch_name.as_str()))
+                    .map(|br| br.clone().into_value())
+                    .unwrap_or_else(|| json!({}));
+
+                // always ensure _ and branch are set
+                if let Value::Object(ref mut map) = v {
+                    map.insert("_".to_string(), Value::String("branch".to_string()));
+                    map.insert("branch".to_string(), Value::String(branch_name.clone()));
+                }
+
+                // find trunks: which schema keys list this branch as a leaf
                 let mut trunks: Vec<Value> = Vec::new();
 
                 for (trunk, leaves) in &schema.leaves {
                     for leaf_entry in leaves {
-                        if leaf_entry.base_value.as_deref() == Some(branch_name) {
+                        if leaf_entry.base_value.as_deref() == Some(branch_name.as_str()) {
                             trunks.push(Value::String(trunk.clone()));
                         }
                     }
@@ -337,11 +363,13 @@ fn records_to_mind(
                         map.insert("trunk".to_string(), Value::Array(trunks));
                     }
                 }
-            }
 
-            v
-        })
-        .collect();
+                v
+            })
+            .collect()
+    } else {
+        vec![]
+    };
 
     let mut mind = json!({
         "_": "mind",
