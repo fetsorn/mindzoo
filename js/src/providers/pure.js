@@ -27,7 +27,7 @@ export function recordsToMind(
 
     const trunkPartial = trunks.length > 0 ? { trunk: trunks } : {};
 
-    return { ...metaRecord, ...trunkPartial };
+    return { _: "branch", branch, ...metaRecord, ...trunkPartial };
   });
 
   const tokenPartial = token !== undefined ? { origin_token: token } : {};
@@ -48,6 +48,7 @@ export function recordsToMind(
     mind: uuid,
     name,
     branch: branchRecords,
+    ...originPartial,
   };
 
   return mind;
