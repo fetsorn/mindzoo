@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 /// Federation handles git operations for a mind directory:
 /// init, commit, set remote, fetch/merge/push.
 /// Mirrors JS federation.settle(dir, origin).
+#[derive(Clone)]
 pub struct Federation;
 
 impl Federation {

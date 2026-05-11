@@ -16,12 +16,16 @@ impl Storage {
         Storage { dir }
     }
 
+    pub fn dir(&self) -> &PathBuf {
+        &self.dir
+    }
+
     /// Dispatch a sparql-like operation on this storage.
     /// Returns a boxed stream of Entry values.
     pub fn sparql(
         &self,
         kind: Kind,
-        query: Entry,
+        query: Vec<Entry>,
     ) -> Pin<Box<dyn Stream<Item = Result<Entry>> + Send>> {
         log::info!("storage::sparql kind={:?} dir={}", kind, self.dir.display());
         let dir = self.dir.clone();
@@ -35,22 +39,18 @@ impl Storage {
     }
 }
 
-fn select(dir: PathBuf, query: Entry) -> impl Stream<Item = Result<Entry>> {
-    // csvs select_record_stream takes an input stream of queries and a light flag
-    let input = async_stream::stream! {
-        yield Ok(query);
-    };
-
+fn select(dir: PathBuf, query: Vec<Entry>) -> impl Stream<Item = Result<Entry>> {
     let stream = try_stream! {
         log::info!("storage::select polled dir={}", dir.display());
         let dataset = Dataset::open(&dir).await.map_err(crate::Error::from)?;
         log::info!("storage::select dataset opened");
 
-        let record_stream = dataset.select_record_stream(input, true);
+        let record_stream = dataset.select_record_stream(query, true);
 
         futures_util::pin_mut!(record_stream);
 
         let mut count = 0usize;
+
         while let Some(entry) = futures_util::StreamExt::next(&mut record_stream).await {
             count += 1;
             log::info!("storage::select yielding entry #{count}");
@@ -62,11 +62,13 @@ fn select(dir: PathBuf, query: Entry) -> impl Stream<Item = Result<Entry>> {
     stream
 }
 
-fn describe(dir: PathBuf, query: Entry) -> impl Stream<Item = Result<Entry>> {
+fn describe(dir: PathBuf, query: Vec<Entry>) -> impl Stream<Item = Result<Entry>> {
     try_stream! {
         let dataset = Dataset::open(&dir).await.map_err(crate::Error::from)?;
-        let record = dataset.build_record(query).await.map_err(crate::Error::from)?;
-        yield record;
+        for q in query {
+            let record = dataset.build_record(q).await.map_err(crate::Error::from)?;
+            yield record;
+        }
     }
 }
 
@@ -79,12 +81,12 @@ async fn open_or_create(dir: &PathBuf) -> crate::Result<Dataset> {
     }
 }
 
-fn update(dir: PathBuf, query: Entry) -> impl Stream<Item = Result<Entry>> {
+fn update(dir: PathBuf, query: Vec<Entry>) -> impl Stream<Item = Result<Entry>> {
     async_stream::stream! {
         log::info!("storage::update polled dir={}", dir.display());
         let result: Result<()> = async {
             let dataset = open_or_create(&dir).await?;
-            dataset.update_record(vec![query]).await.map_err(crate::Error::from)?;
+            dataset.update_record(query).await.map_err(crate::Error::from)?;
             Ok(())
         }.await;
 
@@ -99,11 +101,11 @@ fn update(dir: PathBuf, query: Entry) -> impl Stream<Item = Result<Entry>> {
     }
 }
 
-fn delete(dir: PathBuf, query: Entry) -> impl Stream<Item = Result<Entry>> {
+fn delete(dir: PathBuf, query: Vec<Entry>) -> impl Stream<Item = Result<Entry>> {
     async_stream::stream! {
         let result: Result<()> = async {
             let dataset = Dataset::open(&dir).await.map_err(crate::Error::from)?;
-            dataset.delete_record(vec![query]).await.map_err(crate::Error::from)?;
+            dataset.delete_record(query).await.map_err(crate::Error::from)?;
             Ok(())
         }.await;
 

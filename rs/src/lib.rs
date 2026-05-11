@@ -60,9 +60,9 @@ impl Mindzoo {
         &self,
         kind: Kind,
         graph: &str,
-        query: Entry,
+        query: Vec<Entry>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<Entry>> + Send>>> {
-        log::info!("mindzoo::sparql kind={:?} graph={} query={}", kind, graph, query);
+        log::info!("mindzoo::sparql kind={:?} graph={} query={:?}", kind, graph, query);
 
         let dir_mind = self
             .catalog
@@ -75,14 +75,8 @@ impl Mindzoo {
         let storage = Storage::new(dir_mind.clone());
 
         match kind {
-            Kind::Describe if graph == "root" && query.base == "mind" && query.base_value.as_deref() == Some("root") => {
-                // Root is skipped in rebuild, so it has no mind entry in the catalog.
-                // Build its self-description dynamically from its own schema + branches.
-                let entry = self
-                    .catalog
-                    .describe_mind("root", &self.federation)
-                    .await?;
-                Ok(Box::pin(futures_util::stream::once(async { Ok(entry) })))
+            Kind::Describe if graph == "root" => {
+                Ok(self.catalog.describe(query, &self.federation, &storage))
             }
 
             Kind::Select | Kind::Describe => Ok(storage.sparql(kind, query)),
@@ -90,15 +84,16 @@ impl Mindzoo {
             Kind::Update => {
                 let stream = storage.sparql(kind, query.clone());
 
-                // drain the update stream to completion
                 catalog::drain_stream_boxed(stream).await?;
 
-                // settle git
                 self.federation.settle(&dir_mind, None).await?;
 
-                // if updating a mind record in root, induct it
-                if graph == "root" && query.base == "mind" {
-                    self.catalog.induct(&query, &self.federation).await?;
+                if graph == "root" {
+                    for entry in &query {
+                        if entry.base == "mind" {
+                            self.catalog.induct(entry, &self.federation).await?;
+                        }
+                    }
                 }
 
                 Ok(Box::pin(futures_util::stream::empty()))
@@ -107,16 +102,17 @@ impl Mindzoo {
             Kind::Delete => {
                 let stream = storage.sparql(kind, query.clone());
 
-                // drain the delete stream to completion
                 catalog::drain_stream_boxed(stream).await?;
 
-                // settle git
                 self.federation.settle(&dir_mind, None).await?;
 
-                // if deleting a mind record from root, retire it
-                if graph == "root" && query.base == "mind" {
-                    if let Some(mind_value) = &query.base_value {
-                        self.catalog.retire(mind_value).await?;
+                if graph == "root" {
+                    for entry in &query {
+                        if entry.base == "mind" {
+                            if let Some(mind_value) = &entry.base_value {
+                                self.catalog.retire(mind_value).await?;
+                            }
+                        }
                     }
                 }
 

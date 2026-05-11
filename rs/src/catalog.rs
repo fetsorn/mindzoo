@@ -40,6 +40,7 @@ fn catalog_branch_values() -> Vec<Value> {
 }
 
 /// Catalog manages the ephemeral root dataset that indexes all minds in a directory.
+#[derive(Clone)]
 pub struct Catalog {
     /// Parent directory containing all mind directories and the root catalog.
     dir: PathBuf,
@@ -94,12 +95,12 @@ impl Catalog {
 
         let schema_query: Entry = json!({"_": "_"}).try_into()?;
         let schema_records = collect_stream(
-            mind_storage.sparql(Kind::Select, schema_query),
+            mind_storage.sparql(Kind::Select, vec![schema_query]),
         ).await?;
 
         let branch_query: Entry = json!({"_": "branch"}).try_into()?;
         let branch_records = collect_stream(
-            mind_storage.sparql(Kind::Select, branch_query),
+            mind_storage.sparql(Kind::Select, vec![branch_query]),
         ).await?;
 
         let origin = federation.get_origin(&dir_mind);
@@ -127,6 +128,38 @@ impl Catalog {
         Ok(())
     }
 
+    /// Describe entries from the root graph as a stream.
+    /// Each entry is handled in order: root self-description is built
+    /// dynamically, all others go through normal storage describe.
+    pub fn describe(
+        &self,
+        query: Vec<Entry>,
+        federation: &Federation,
+        storage: &Storage,
+    ) -> std::pin::Pin<Box<dyn futures_core::stream::Stream<Item = Result<Entry>> + Send>> {
+        let catalog = self.clone();
+        let federation = federation.clone();
+        let storage_dir = storage.dir().clone();
+
+        let stream = async_stream::try_stream! {
+            for entry in query {
+                if entry.base == "mind" && entry.base_value.as_deref() == Some("root") {
+                    let described = catalog.describe_mind("root", &federation).await?;
+                    yield described;
+                } else {
+                    let s = Storage::new(storage_dir.clone());
+                    let mut desc_stream = s.sparql(Kind::Describe, vec![entry]);
+                    while let Some(result) = futures_util::StreamExt::next(&mut desc_stream).await {
+                        yield result?;
+                    }
+                }
+            }
+        };
+
+        Box::pin(stream)
+    }
+
+
     /// Destroy and rebuild the root catalog from filesystem layout.
     /// Scans all mind directories, reads their schema + branch records,
     /// and writes mind entries to the root catalog dataset.
@@ -146,12 +179,12 @@ impl Catalog {
 
         // write schema record
         let schema_entry: Entry = catalog_schema_value().try_into()?;
-        drain_stream_boxed(catalog_storage.sparql(Kind::Update, schema_entry)).await?;
+        drain_stream_boxed(catalog_storage.sparql(Kind::Update, vec![schema_entry])).await?;
 
         // write branch metadata records
         for value in catalog_branch_values() {
             let entry: Entry = value.try_into()?;
-            drain_stream_boxed(catalog_storage.sparql(Kind::Update, entry)).await?;
+            drain_stream_boxed(catalog_storage.sparql(Kind::Update, vec![entry])).await?;
         }
 
         // scan all mind directories
@@ -175,7 +208,7 @@ impl Catalog {
             };
 
             let mind_entry = self.describe_mind(uuid, federation).await?;
-            drain_stream_boxed(catalog_storage.sparql(Kind::Update, mind_entry)).await?;
+            drain_stream_boxed(catalog_storage.sparql(Kind::Update, vec![mind_entry])).await?;
         }
 
         // settle the root catalog git repo
@@ -223,7 +256,7 @@ impl Catalog {
 
                 let dir_catalog = self.dir.join("root");
                 let catalog_storage = Storage::new(dir_catalog);
-                drain_stream_boxed(catalog_storage.sparql(Kind::Update, mind_entry)).await?;
+                drain_stream_boxed(catalog_storage.sparql(Kind::Update, vec![mind_entry])).await?;
 
                 return Ok(());
             } else {
@@ -245,11 +278,11 @@ impl Catalog {
             let (schema_value, meta_values) = mind_to_records(branches);
 
             let schema_entry: Entry = schema_value.try_into()?;
-            drain_stream_boxed(mind_storage.sparql(Kind::Update, schema_entry)).await?;
+            drain_stream_boxed(mind_storage.sparql(Kind::Update, vec![schema_entry])).await?;
 
             for meta_value in meta_values {
                 let meta_entry: Entry = meta_value.try_into()?;
-                drain_stream_boxed(mind_storage.sparql(Kind::Update, meta_entry)).await?;
+                drain_stream_boxed(mind_storage.sparql(Kind::Update, vec![meta_entry])).await?;
             }
         }
 

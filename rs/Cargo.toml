@@ -1,6 +1,6 @@
 [package]
 name = "mindzoo"
-version = "0.1.3"
+version = "0.1.4"
 description = "Maps SPARQL named graphs to csvs datasets"
 authors = ["fetsorn"]
 license = "AGPLv3"
@@ -18,7 +18,7 @@ futures-core = "0.3.31"
 futures-util = "0.3.31"
 async-stream = "0.3.6"
 tokio = { version = "1", features = ["fs", "rt"] }
-csvs = { version = "0.3.2", git = "https://codeberg.org/norcivilianlabs/csvs-rs" }
+csvs = { version = "0.3.3", git = "https://codeberg.org/norcivilianlabs/csvs-rs" }
 git2kit = { version = "0.1.2", git = "https://codeberg.org/fetsorn/git2kit" }
 git2 = "0.20"
 log = "0.4"
