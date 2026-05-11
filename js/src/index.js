@@ -11,18 +11,8 @@ async function SELECT({ fs, dir, catalog }, mind, query) {
 }
 
 async function DESCRIBE({ fs, dir, catalog }, mind, query) {
-  const isCatalog =
-    mind === "root" && query._ === "mind" && query.mind === "root";
-
-  if (isCatalog) {
-    const entry = await catalog.describe(query.mind);
-
-    return new ReadableStream({
-      async pull(controller) {
-        controller.enqueue(entry);
-        controller.close();
-      },
-    });
+  if (mind === "root") {
+    return catalog.describe(query);
   }
 
   const dirMind = await catalog.locate(mind);
@@ -41,9 +31,15 @@ async function DELETE({ fs, dir, catalog, federation }, mind, query) {
 
   await federation.settle(dirMind);
 
-  const isMind = mind === "root" && query._ === "mind";
+  if (mind === "root") {
+    const queries = Array.isArray(query) ? query : [query];
 
-  if (isMind) await catalog.retire(query.mind);
+    for (const q of queries) {
+      if (q._ === "mind" && q.mind) {
+        await catalog.retire(q.mind);
+      }
+    }
+  }
 
   return new ReadableStream({
     async pull(controller) {
@@ -61,9 +57,15 @@ async function UPDATE({ fs, dir, catalog, federation }, mind, query) {
 
   await federation.settle(dirMind);
 
-  const isMind = mind === "root" && query._ === "mind";
+  if (mind === "root") {
+    const queries = Array.isArray(query) ? query : [query];
 
-  if (isMind) await catalog.induct(query);
+    for (const q of queries) {
+      if (q._ === "mind") {
+        await catalog.induct(q);
+      }
+    }
+  }
 
   return new ReadableStream({
     async pull(controller) {
@@ -87,7 +89,7 @@ async function sparql(providers, { kind, graph, query }) {
       return UPDATE(providers, graph, query);
 
     case "DELETE":
-      await DELETE(providers, graph, query);
+      return DELETE(providers, graph, query);
   }
 }
 

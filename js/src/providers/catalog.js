@@ -26,7 +26,7 @@ async function retire({ fs, dir }, mind) {
   }
 }
 
-async function describe({ fs, dir, federation }, mind) {
+async function describeMind({ fs, dir, federation }, mind) {
   const dirMind = await locate({ fs, dir }, mind);
 
   const mindPath = path.basename(dirMind);
@@ -83,7 +83,7 @@ async function rebuild({ fs, dir, federation }) {
 
     const [uuid, name] = mindPath.split("-");
 
-    const mind = await describe({ fs, dir, federation }, uuid);
+    const mind = await describeMind({ fs, dir, federation }, uuid);
 
     // write to catalog
     await Array.fromAsync(storage.sparql({ kind: "UPDATE", query: mind }));
@@ -125,7 +125,7 @@ async function induct({ fs, dir, federation }, record) {
       // clone
       await federation.settle(dirMindNew, origin);
 
-      const mindRecord = await describe({ fs, dir, federation }, record.mind);
+      const mindRecord = await describeMind({ fs, dir, federation }, record.mind);
 
       const dirCatalog = path.join(dir, "root");
 
@@ -161,12 +161,48 @@ async function induct({ fs, dir, federation }, record) {
   await federation.settle(dirMindNew, origin);
 }
 
+function describe(providers, query) {
+  const queries = Array.isArray(query) ? query : [query];
+
+  const dirRoot = path.join(providers.dir, "root");
+
+  const storage = csvs(providers.fs, dirRoot);
+
+  async function* generate() {
+    for (const q of queries) {
+      if (q._ === "mind" && q.mind === "root") {
+        yield await describeMind(providers, q.mind);
+      } else {
+        const stream = storage.sparql({ kind: "DESCRIBE", query: q });
+
+        for await (const entry of stream) {
+          yield entry;
+        }
+      }
+    }
+  }
+
+  const iter = generate();
+
+  return new ReadableStream({
+    async pull(controller) {
+      const { done, value } = await iter.next();
+
+      if (done) {
+        controller.close();
+      } else {
+        controller.enqueue(value);
+      }
+    },
+  });
+}
+
 export default (providers) => {
   return {
     locate: (mind) => locate(providers, mind),
     retire: (mind) => retire(providers, mind),
     rebuild: () => rebuild(providers),
     induct: (record) => induct(providers, record),
-    describe: (mind) => describe(providers, mind),
+    describe: (query) => describe(providers, query),
   };
 };
