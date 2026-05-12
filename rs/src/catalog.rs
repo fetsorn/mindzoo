@@ -96,10 +96,35 @@ impl Catalog {
             mind_storage.sparql(Kind::Select, vec![schema_query]),
         ).await?;
 
-        let branch_query: Entry = json!({"_": "branch"}).try_into()?;
-        let branch_records = collect_stream(
-            mind_storage.sparql(Kind::Select, vec![branch_query]),
-        ).await?;
+        // Extract all branch names from schema (trunks and leaves),
+        // then DESCRIBE each to get prose (@en/@ru)
+        let mut branch_names: Vec<String> = Vec::new();
+        if let Some(schema) = schema_records.first() {
+            for (trunk, leaves) in &schema.leaves {
+                if !branch_names.contains(trunk) {
+                    branch_names.push(trunk.clone());
+                }
+                for leaf_entry in leaves {
+                    if let Some(leaf_name) = leaf_entry.base_value.as_deref() {
+                        let leaf_name = leaf_name.to_string();
+                        if !branch_names.contains(&leaf_name) {
+                            branch_names.push(leaf_name);
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut branch_records: Vec<Entry> = Vec::new();
+        for branch_name in &branch_names {
+            let query: Entry = json!({"_": "branch", "branch": branch_name}).try_into()?;
+            let described = collect_stream(
+                mind_storage.sparql(Kind::Describe, vec![query]),
+            ).await?;
+            if let Some(entry) = described.into_iter().next() {
+                branch_records.push(entry);
+            }
+        }
 
         let origin = federation.get_origin(&dir_mind);
 
@@ -471,4 +496,224 @@ fn mind_to_records(branches: &[Entry]) -> (Value, Vec<Value>) {
     }
 
     (schema, metas)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use csvs::{Dataset, Entry, IntoValue};
+    use serde_json::json;
+    use temp_dir::TempDir;
+
+    /// Helper: build default branches matching the JS test fixture.
+    fn default_branches() -> Vec<Value> {
+        vec![
+            json!({"_": "branch", "branch": "event", "@en": "Record", "@ru": "Запись"}),
+            json!({"_": "branch", "branch": "actdate", "trunk": "event", "task": "date", "@en": "Date of the event", "@ru": "Дата события"}),
+            json!({"_": "branch", "branch": "category", "trunk": "event", "@en": "Category", "@ru": "Категория"}),
+            json!({"_": "branch", "branch": "branch", "@en": "Branch name", "@ru": "Название ветки"}),
+            json!({"_": "branch", "branch": "trunk", "trunk": "branch", "@en": "Branch trunk", "@ru": "Ствол ветки"}),
+            json!({"_": "branch", "branch": "task", "trunk": "branch", "@en": "Branch task", "@ru": "Предназначение ветки"}),
+        ]
+    }
+
+    /// Write schema + meta records to a temp dataset, mirroring JS mindToRecords flow.
+    async fn write_branches(dir: &std::path::Path) -> csvs::Result<()> {
+        let branches: Vec<Entry> = default_branches()
+            .into_iter()
+            .map(|v| v.try_into())
+            .collect::<csvs::Result<Vec<Entry>>>()?;
+
+        let (schema_value, meta_values) = mind_to_records(&branches);
+
+        let schema_entry: Entry = schema_value.try_into()?;
+        let dataset = Dataset::create(&dir.to_path_buf(), false).await?;
+        dataset.update_record(vec![schema_entry]).await?;
+
+        for meta_value in meta_values {
+            let meta_entry: Entry = meta_value.try_into()?;
+            let dataset = Dataset::open(&dir.to_path_buf()).await?;
+            dataset.update_record(vec![meta_entry]).await?;
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_record_writes_prose_blobs_for_branch_meta_records() -> csvs::Result<()> {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().to_path_buf();
+
+        write_branches(&dir).await?;
+
+        let prose_dir = dir.join("csvs").join("prose");
+        assert!(prose_dir.exists(), "prose dir should exist");
+
+        let files: Vec<String> = std::fs::read_dir(&prose_dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+
+        assert!(files.contains(&"event.en".to_string()), "missing event.en");
+        assert!(files.contains(&"event.ru".to_string()), "missing event.ru");
+        assert!(files.contains(&"actdate.en".to_string()), "missing actdate.en");
+        assert!(files.contains(&"actdate.ru".to_string()), "missing actdate.ru");
+        assert!(files.contains(&"category.en".to_string()), "missing category.en");
+        assert!(files.contains(&"branch.en".to_string()), "missing branch.en");
+        assert!(files.contains(&"trunk.en".to_string()), "missing trunk.en");
+        assert!(files.contains(&"task.en".to_string()), "missing task.en");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn build_record_with_prose_returns_en_ru() -> csvs::Result<()> {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().to_path_buf();
+
+        write_branches(&dir).await?;
+
+        let query: Entry = json!({"_": "branch", "branch": "event"}).try_into()?;
+        let dataset = Dataset::open(&dir.join("csvs")).await?;
+        let entry = dataset.build_record_with_prose(query).await?;
+
+        assert_eq!(
+            entry.prose.get(&Some("en".to_string())),
+            Some(&"Record".to_string()),
+            "event branch should have @en"
+        );
+        assert_eq!(
+            entry.prose.get(&Some("ru".to_string())),
+            Some(&"Запись".to_string()),
+            "event branch should have @ru"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn schema_describe_then_records_to_mind_preserves_prose() -> csvs::Result<()> {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().to_path_buf();
+        let csvs_dir = dir.join("csvs");
+
+        write_branches(&dir).await?;
+
+        // 1. SELECT schema
+        let schema_query: Entry = json!({"_": "_"}).try_into()?;
+        let dataset = Dataset::open(&csvs_dir).await?;
+        let schema_records = dataset.select_record(vec![schema_query], true).await?;
+        let schema = &schema_records[0];
+
+        // 2. extract all branch names from schema
+        let mut branch_names: Vec<String> = Vec::new();
+        for (trunk, leaves) in &schema.leaves {
+            if !branch_names.contains(trunk) {
+                branch_names.push(trunk.clone());
+            }
+            for leaf_entry in leaves {
+                if let Some(leaf_name) = leaf_entry.base_value.as_deref() {
+                    let s = leaf_name.to_string();
+                    if !branch_names.contains(&s) {
+                        branch_names.push(s);
+                    }
+                }
+            }
+        }
+
+        // 3. DESCRIBE each branch with prose
+        let mut branch_records: Vec<Entry> = Vec::new();
+        for branch_name in &branch_names {
+            let query: Entry = json!({"_": "branch", "branch": branch_name}).try_into()?;
+            let dataset = Dataset::open(&csvs_dir).await?;
+            let entry = dataset.build_record_with_prose(query).await?;
+            branch_records.push(entry);
+        }
+
+        // 4. records_to_mind
+        let mind_value = records_to_mind(
+            "abc123",
+            Some("test"),
+            Some(schema),
+            &branch_records,
+            None,
+            None,
+        );
+
+        let branches = mind_value.get("branch").unwrap().as_array().unwrap();
+
+        let event = branches.iter().find(|b| b.get("branch").and_then(|v| v.as_str()) == Some("event")).unwrap();
+        assert_eq!(event.get("@en").and_then(|v| v.as_str()), Some("Record"));
+        assert_eq!(event.get("@ru").and_then(|v| v.as_str()), Some("Запись"));
+
+        let actdate = branches.iter().find(|b| b.get("branch").and_then(|v| v.as_str()) == Some("actdate")).unwrap();
+        assert_eq!(actdate.get("@en").and_then(|v| v.as_str()), Some("Date of the event"));
+
+        let branch_branch = branches.iter().find(|b| b.get("branch").and_then(|v| v.as_str()) == Some("branch")).unwrap();
+        assert_eq!(branch_branch.get("@en").and_then(|v| v.as_str()), Some("Branch name"));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_record_with_nested_prose_writes_blobs() -> csvs::Result<()> {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().to_path_buf();
+
+        // create dataset with catalog-like schema (create with bare=false adds csvs/ internally)
+        let catalog_schema: Entry = json!({
+            "_": "_",
+            "mind": ["name", "branch"],
+            "branch": ["trunk", "task", "cognate"]
+        }).try_into()?;
+
+        let dataset = Dataset::create(&dir, false).await?;
+        dataset.update_record(vec![catalog_schema]).await?;
+
+        // write a mind record with nested branches containing @en/@ru
+        let mind_record: Entry = json!({
+            "_": "mind",
+            "mind": "abc123",
+            "name": "test",
+            "branch": [
+                {"_": "branch", "branch": "event", "@en": "Record", "@ru": "Запись"},
+                {"_": "branch", "branch": "actdate", "trunk": "event", "task": "date", "@en": "Date of the event", "@ru": "Дата события"}
+            ]
+        }).try_into()?;
+
+        let csvs_dir = dir.join("csvs");
+        let dataset = Dataset::open(&csvs_dir).await?;
+        dataset.update_record(vec![mind_record]).await?;
+
+        // check nested prose was written
+        let prose_dir = csvs_dir.join("prose");
+        assert!(prose_dir.exists(), "prose dir should exist");
+
+        let files: Vec<String> = std::fs::read_dir(&prose_dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+
+        assert!(files.contains(&"event.en".to_string()), "missing event.en");
+        assert!(files.contains(&"event.ru".to_string()), "missing event.ru");
+        assert!(files.contains(&"actdate.en".to_string()), "missing actdate.en");
+        assert!(files.contains(&"actdate.ru".to_string()), "missing actdate.ru");
+
+        // read back with buildRecord + prose
+        let query: Entry = json!({"_": "mind", "mind": "abc123"}).try_into()?;
+        let dataset = Dataset::open(&csvs_dir).await?;
+        let entry = dataset.build_record_with_prose(query).await?;
+        let entry_json = entry.into_value();
+
+        let branches = entry_json.get("branch").unwrap().as_array().unwrap();
+
+        let event = branches.iter().find(|b| {
+            b.get("branch").and_then(|v| v.as_str()) == Some("event")
+        }).expect("should have event branch as object");
+
+        assert_eq!(event.get("@en").and_then(|v| v.as_str()), Some("Record"));
+        assert_eq!(event.get("@ru").and_then(|v| v.as_str()), Some("Запись"));
+
+        Ok(())
+    }
 }

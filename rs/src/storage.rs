@@ -66,7 +66,7 @@ fn describe(dir: PathBuf, query: Vec<Entry>) -> impl Stream<Item = Result<Entry>
     try_stream! {
         let dataset = Dataset::open(&dir).await.map_err(crate::Error::from)?;
         for q in query {
-            let record = dataset.clone().build_record(q).await.map_err(crate::Error::from)?;
+            let record = dataset.clone().build_record_with_prose(q).await.map_err(crate::Error::from)?;
             yield record;
         }
     }
