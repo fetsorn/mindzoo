@@ -141,7 +141,6 @@ sparql(kind, graph, query):
 3. csvs_provider.rs — wrap Dataset operations into stream-returning functions
 4. catalog.rs — locate, rebuild (without settle), retire, induct (without settle)
 5. lib.rs — Mindzoo::new, Mindzoo::sparql dispatch
-6. Test with csvs-test fixtures
 
 ### Phase 2: Federation
 7. federation.rs — Federation trait, Git2Federation wrapping git2kit

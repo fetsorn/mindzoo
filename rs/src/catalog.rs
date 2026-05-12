@@ -13,7 +13,7 @@ fn catalog_schema_value() -> Value {
     json!({
         "_": "_",
         "mind": ["name", "category", "branch", "origin_url"],
-        "branch": ["trunk", "task", "cognate", "description_en", "description_ru"],
+        "branch": ["trunk", "task", "cognate"],
         "origin_url": ["origin_token"]
     })
 }
@@ -22,20 +22,18 @@ fn catalog_schema_value() -> Value {
 /// Mirrors JS catalog_branch_records.json.
 fn catalog_branch_values() -> Vec<Value> {
     vec![
-        json!({"_": "branch", "branch": "mind", "description_en": "mind", "description_ru": "Проект"}),
-        json!({"_": "branch", "branch": "name", "description_en": "Name of the mind", "description_ru": "Название проекта"}),
-        json!({"_": "branch", "branch": "category", "description_en": "Category of the mind", "description_ru": "Категория проекта"}),
-        json!({"_": "branch", "branch": "branch", "description_en": "Branch name", "description_ru": "Название ветки"}),
-        json!({"_": "branch", "branch": "trunk", "description_en": "Branch trunk", "description_ru": "Ствол ветки"}),
-        json!({"_": "branch", "branch": "task", "description_en": "Branch task", "description_ru": "Предназначение ветки"}),
-        json!({"_": "branch", "branch": "cognate", "description_en": "Branch cognate", "description_ru": "Родственная ветка"}),
-        json!({"_": "branch", "branch": "description_en", "description_en": "Branch description EN", "description_ru": "Описание ветки на английском"}),
-        json!({"_": "branch", "branch": "description_ru", "description_en": "Branch description RU", "description_ru": "Описание ветки на русском"}),
-        json!({"_": "branch", "branch": "local_tag", "task": "directory", "description_en": "Path to asset archive", "description_ru": "Путь к локальному архиву"}),
-        json!({"_": "branch", "branch": "origin_url", "task": "remote", "description_en": "URL to remote git repository", "description_ru": "Путь к удалённому git репозиторию"}),
-        json!({"_": "branch", "branch": "origin_token", "description_en": "Authentication token", "description_ru": "Токен для синхронизации"}),
-        json!({"_": "branch", "branch": "sync_tag", "task": "sync", "description_en": "Name of database to sync", "description_ru": "Название базы данных для синхронизации"}),
-        json!({"_": "branch", "branch": "sync_tag_search", "description_en": "Search query", "description_ru": "Поисковый запрос"}),
+        json!({"_": "branch", "branch": "mind", "@en": "mind", "@ru": "Проект"}),
+        json!({"_": "branch", "branch": "name", "@en": "Name of the mind", "@ru": "Название проекта"}),
+        json!({"_": "branch", "branch": "category", "@en": "Category of the mind", "@ru": "Категория проекта"}),
+        json!({"_": "branch", "branch": "branch", "@en": "Branch name", "@ru": "Название ветки"}),
+        json!({"_": "branch", "branch": "trunk", "@en": "Branch trunk", "@ru": "Ствол ветки"}),
+        json!({"_": "branch", "branch": "task", "@en": "Branch task", "@ru": "Предназначение ветки"}),
+        json!({"_": "branch", "branch": "cognate", "@en": "Branch cognate", "@ru": "Родственная ветка"}),
+        json!({"_": "branch", "branch": "local_tag", "task": "directory", "@en": "Path to asset archive", "@ru": "Путь к локальному архиву"}),
+        json!({"_": "branch", "branch": "origin_url", "task": "remote", "@en": "URL to remote git repository", "@ru": "Путь к удалённому git репозиторию"}),
+        json!({"_": "branch", "branch": "origin_token", "@en": "Authentication token", "@ru": "Токен для синхронизации"}),
+        json!({"_": "branch", "branch": "sync_tag", "task": "sync", "@en": "Name of database to sync", "@ru": "Название базы данных для синхронизации"}),
+        json!({"_": "branch", "branch": "sync_tag_search", "@en": "Search query", "@ru": "Поисковый запрос"}),
     ]
 }
 
