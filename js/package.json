@@ -1,7 +1,7 @@
 {
   "name": "@fetsorn/mindzoo",
   "productName": "mindzoo",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "description": "Omnipresent decentralized data",
   "type": "module",
   "files": ["dist"],
@@ -23,7 +23,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest --run --browser.headless --coverage",
+    "test": "vitest --run",
     "lint": "eslint ./src/"
   },
   "devDependencies": {
@@ -52,7 +52,7 @@
     "vitest": "^4.1.0"
   },
   "dependencies": {
-    "@fetsorn/csvs-js": "^0.29.0",
+    "@fetsorn/csvs-js": "^0.29.1",
     "@fetsorn/isogit-lfs": "^0.5.3",
     "@isomorphic-git/lightning-fs": "4.6.2",
     "@vitest/browser-webdriverio": "^4.1.0",

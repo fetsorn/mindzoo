@@ -12,7 +12,14 @@ function SELECT(fs, dir, query) {
 function DESCRIBE(fs, dir, query) {
   return new ReadableStream({
     async pull(controller) {
-      const record = await csvs.buildRecord({ fs, dir, query: [query] });
+      const record = await csvs.buildRecord({
+        fs,
+        dir,
+        query: [query],
+        prose: true,
+      });
+
+      console.log(record);
 
       controller.enqueue(record);
 

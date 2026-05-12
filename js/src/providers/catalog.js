@@ -42,10 +42,24 @@ async function describeMind({ fs, dir, federation }, mind) {
     }),
   );
 
-  const branchRecords = await Array.fromAsync(
-    storageMind.sparql({
-      kind: "SELECT",
-      query: { _: "branch" },
+  // extract all branch names from the schema (trunks and leaves)
+  const schemaRelations = Object.entries(schemaRecord).filter(
+    ([key]) => key !== "_",
+  );
+
+  const branchNames = [...new Set(schemaRelations.flat(Infinity))];
+
+  // buildRecord each branch with prose to get @en/@ru
+  const branchRecords = await Promise.all(
+    branchNames.map(async (branchName) => {
+      const [described] = await Array.fromAsync(
+        storageMind.sparql({
+          kind: "DESCRIBE",
+          query: { _: "branch", branch: branchName },
+        }),
+      );
+
+      return described;
     }),
   );
 

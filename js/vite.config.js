@@ -1,7 +1,6 @@
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { defineConfig } from "vite";
-import { webdriverio } from "@vitest/browser-webdriverio";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -33,21 +32,11 @@ export default defineConfig({
     },
     test: {
         include: ["./src/**/*.test.js"],
-        setupFiles: ["./src/test/setup.js"],
         coverage: {
             provider: "istanbul",
             coverage: {
                 reporter: ["text", "json", "html"],
             },
-        },
-        browser: {
-            provider: webdriverio(),
-            enabled: true,
-            instances: [
-                {
-                    browser: "firefox",
-                },
-            ],
         },
     },
 });
