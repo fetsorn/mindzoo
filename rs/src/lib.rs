@@ -83,18 +83,27 @@ impl Mindzoo {
             Kind::Select | Kind::Describe => Ok(storage.sparql(kind, query)),
 
             Kind::Update => {
-                let stream = storage.sparql(kind, query.clone());
-
-                catalog::drain_stream_boxed(stream).await?;
-
-                self.federation.settle(&dir_mind, None).await?;
-
                 if graph == "root" {
+                    // mind entries are handled by induct (which writes to catalog + settles)
+                    let mut non_mind_entries = Vec::new();
+
                     for entry in &query {
                         if entry.base == "mind" {
                             self.catalog.induct(entry, &self.federation).await?;
+                        } else {
+                            non_mind_entries.push(entry.clone());
                         }
                     }
+
+                    if !non_mind_entries.is_empty() {
+                        let stream = storage.sparql(kind, non_mind_entries);
+                        catalog::drain_stream_boxed(stream).await?;
+                        self.federation.settle(&dir_mind, None).await?;
+                    }
+                } else {
+                    let stream = storage.sparql(kind, query);
+                    catalog::drain_stream_boxed(stream).await?;
+                    self.federation.settle(&dir_mind, None).await?;
                 }
 
                 Ok(Box::pin(futures_util::stream::empty()))

@@ -49,16 +49,39 @@ impl Catalog {
         Catalog { dir }
     }
 
-    /// Find the full path for a mind by UUID prefix.
-    /// Scans dir for an entry matching `mind` exactly or starting with `{mind}-`.
+    /// Find the full path for a mind by UUID.
+    /// Scans dir for an entry whose csvs/.csvs.csv contains matching uuid/id,
+    /// falls back to matching folder name.
     pub async fn locate(&self, mind: &str) -> Result<Option<PathBuf>> {
         let mut entries = fs::read_dir(&self.dir).await?;
 
         while let Some(entry) = entries.next_entry().await? {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
+            let path = entry.path();
 
-            if name_str == mind || name_str.starts_with(&format!("{mind}-")) {
+            // check csvs/.csvs.csv for uuid/id match
+            let mind_storage = Storage::new(path.clone());
+            let version_query: Entry = json!({"_": "."}).try_into()?;
+            let version_records = collect_stream(
+                mind_storage.sparql(Kind::Select, vec![version_query]),
+            ).await;
+
+            if let Ok(records) = version_records {
+                let found_uuid = records.first().and_then(|v| {
+                    v.leaves.get("uuid")
+                        .or_else(|| v.leaves.get("id"))
+                        .and_then(|entries| entries.first())
+                        .and_then(|e| e.base_value.as_deref())
+                });
+
+                if found_uuid == Some(mind) {
+                    return Ok(Some(path));
+                }
+            }
+
+            // fallback: match folder name
+            let name_str = entry.file_name();
+            let name_str = name_str.to_string_lossy();
+            if name_str == mind {
                 return Ok(Some(entry.path()));
             }
         }
@@ -78,18 +101,26 @@ impl Catalog {
             .await?
             .ok_or_else(|| Error::from_message(format!("mind not found: {mind}")))?;
 
-        let mind_path_str = dir_mind
+        let name = dir_mind
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
 
-        let (uuid, name) = match mind_path_str.split_once('-') {
-            Some((u, n)) => (u.to_string(), Some(n.to_string())),
-            None => (mind_path_str.clone(), None),
-        };
-
         let mind_storage = Storage::new(dir_mind.clone());
+
+        // read uuid from csvs/.csvs.csv version record
+        let version_query: Entry = json!({"_": "."}).try_into()?;
+        let version_records = collect_stream(
+            mind_storage.sparql(Kind::Select, vec![version_query]),
+        ).await?;
+
+        let uuid = version_records.first().and_then(|v| {
+            v.leaves.get("uuid")
+                .or_else(|| v.leaves.get("id"))
+                .and_then(|entries| entries.first())
+                .and_then(|e| e.base_value.clone())
+        }).unwrap_or_else(|| mind.to_string());
 
         let schema_query: Entry = json!({"_": "_"}).try_into()?;
         let schema_records = collect_stream(
@@ -130,7 +161,7 @@ impl Catalog {
 
         let mind_value = records_to_mind(
             &uuid,
-            name.as_deref(),
+            Some(&name),
             schema_records.first(),
             &branch_records,
             origin.as_ref().map(|o| o.url.as_str()),
@@ -224,10 +255,33 @@ impl Catalog {
 
             log::info!("catalog::rebuild scanning mind {}", mind_path_str);
 
-            // parse uuid from directory name (uuid or uuid-name format)
-            let uuid = match mind_path_str.split_once('-') {
-                Some((u, _)) => u,
-                None => &mind_path_str,
+            // read uuid from csvs/.csvs.csv version record
+            let mind_dir = dir_entry.path();
+            let mind_storage = Storage::new(mind_dir.clone());
+            let version_query: Entry = json!({"_": "."}).try_into()?;
+            let version_records = match collect_stream(
+                mind_storage.sparql(Kind::Select, vec![version_query]),
+            ).await {
+                Ok(r) => r,
+                Err(_) => {
+                    log::warn!("catalog::rebuild skipping {} — no .csvs.csv", mind_path_str);
+                    continue;
+                }
+            };
+
+            let uuid = version_records.first().and_then(|v| {
+                v.leaves.get("uuid")
+                    .or_else(|| v.leaves.get("id"))
+                    .and_then(|entries| entries.first())
+                    .and_then(|e| e.base_value.as_deref())
+            });
+
+            let uuid = match uuid {
+                Some(u) => u,
+                None => {
+                    log::warn!("catalog::rebuild skipping {} — no uuid in .csvs.csv", mind_path_str);
+                    continue;
+                }
             };
 
             let mind_entry = match self.describe_mind(uuid, federation).await {
@@ -258,7 +312,8 @@ impl Catalog {
             .as_deref()
             .ok_or_else(|| Error::from_message("mind record missing base value"))?;
 
-        let name = get_leaf_value(record, "name");
+        // if no name, use uuid as name
+        let name = get_leaf_value(record, "name").unwrap_or(mind);
 
         let origin_url = get_leaf_entry(record, "origin_url");
         let origin = origin_url.and_then(|ou| {
@@ -270,18 +325,54 @@ impl Catalog {
         let dir_mind_existing = self.locate(mind).await?;
         let is_new = dir_mind_existing.is_none();
 
-        let dir_mind_new = match name {
-            Some(n) => self.dir.join(format!("{mind}-{n}")),
-            None => self.dir.join(mind),
-        };
+        // if folder name collides with a different uuid, use name-uuid
+        let mut dir_mind_new = self.dir.join(name);
+        if is_new && dir_mind_new.exists() {
+            let existing_uuid = {
+                let s = Storage::new(dir_mind_new.clone());
+                let vq: Entry = json!({"_": "."}).try_into()?;
+                let vr = collect_stream(s.sparql(Kind::Select, vec![vq])).await.ok();
+                vr.and_then(|r| r.first().and_then(|v| {
+                    v.leaves.get("uuid")
+                        .or_else(|| v.leaves.get("id"))
+                        .and_then(|entries| entries.first())
+                        .and_then(|e| e.base_value.clone())
+                }))
+            };
+            if existing_uuid.as_deref() != Some(mind) {
+                dir_mind_new = self.dir.join(format!("{name}-{mind}"));
+            }
+        }
 
         if is_new {
             if let Some(ref origin) = origin {
                 // clone
                 federation.settle(&dir_mind_new, Some(origin)).await?;
 
+                // read uuid from cloned repo's version record
+                let cloned_storage = Storage::new(dir_mind_new.clone());
+                let vq: Entry = json!({"_": "."}).try_into()?;
+                let cloned_vr = collect_stream(
+                    cloned_storage.sparql(Kind::Select, vec![vq]),
+                ).await.ok();
+
+                let cloned_uuid = cloned_vr.and_then(|r| r.first().and_then(|v| {
+                    v.leaves.get("uuid")
+                        .or_else(|| v.leaves.get("id"))
+                        .and_then(|entries| entries.first())
+                        .and_then(|e| e.base_value.clone())
+                }));
+
+                let cloned_uuid = match cloned_uuid {
+                    Some(u) => u,
+                    None => {
+                        log::warn!("catalog::induct cloned repo has no uuid, skipping {}", dir_mind_new.display());
+                        return Ok(());
+                    }
+                };
+
                 // read actual schema from cloned repo and write to catalog
-                let mind_entry = self.describe_mind(mind, federation).await?;
+                let mind_entry = self.describe_mind(&cloned_uuid, federation).await?;
 
                 let dir_catalog = self.dir.join("root");
                 let catalog_storage = Storage::new(dir_catalog);
@@ -290,6 +381,11 @@ impl Catalog {
                 return Ok(());
             } else {
                 fs::create_dir_all(&dir_mind_new).await?;
+
+                // write uuid to csvs/.csvs.csv version record
+                let new_mind_storage = Storage::new(dir_mind_new.clone());
+                let version_entry: Entry = json!({"_": ".", "uuid": mind}).try_into()?;
+                drain_stream_boxed(new_mind_storage.sparql(Kind::Update, vec![version_entry])).await?;
             }
         } else if let Some(existing) = dir_mind_existing {
             if existing != dir_mind_new {
