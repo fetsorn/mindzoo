@@ -93,8 +93,8 @@ async function sparql(providers, { kind, graph, query }) {
   }
 }
 
-export default async function createMindZoo({ fs, dir }) {
-  const federation = git(fs);
+export default async function createMindZoo({ fs, dir, http }) {
+  const federation = git(fs, http);
 
   const catalog = io({ fs, dir, federation });
 

@@ -23,9 +23,7 @@ export async function gitinit(fs, dir) {
   }
 }
 
-export async function clone(fs, dir, remote) {
-  const http = await import("isomorphic-git/http/web");
-
+export async function clone(fs, http, dir, remote) {
   const options = {
     fs,
     http,
@@ -239,10 +237,12 @@ async function canReach(url, token) {
   }
 }
 
-export async function resolve(fs, dir, resolutions) {
+export async function resolve(fs, http, dir, resolutions) {
   const remote = await getOrigin(fs, dir);
 
-  if (!(await canReach(remote.url, remote.token))) {
+  const reachable = await canReach(remote.url, remote.token);
+  console.error("resolve: remote=", remote.url, "reachable=", reachable);
+  if (!reachable) {
     return { ok: true };
   }
 
@@ -257,8 +257,6 @@ export async function resolve(fs, dir, resolutions) {
         }),
       }
     : {};
-
-  const http = await import("isomorphic-git/http/web");
 
   await git.fetch({
     fs,
@@ -333,12 +331,12 @@ export async function resolve(fs, dir, resolutions) {
   return { ok: true };
 }
 
-async function settle(fs, dir, origin) {
+async function settle(fs, http, dir, origin) {
   const dirExists = await exists(fs, dir);
 
   // clone
   if (origin && !dirExists) {
-    await clone(fs, dir, origin);
+    await clone(fs, http, dir, origin);
   }
 
   // init
@@ -356,15 +354,15 @@ async function settle(fs, dir, origin) {
     // fetch
     // merge
     // push
-    await resolve(fs, dir);
-  } catch {
-    //do nothing
+    await resolve(fs, http, dir);
+  } catch (e) {
+    console.error("settle resolve error:", e);
   }
 }
 
-export default (fs) => {
+export default (fs, http) => {
   return {
-    settle: (dir, origin) => settle(fs, dir, origin),
+    settle: (dir, origin) => settle(fs, http, dir, origin),
     getOrigin: (dir) => getOrigin(fs, dir),
   };
 };
