@@ -1,0 +1,19 @@
+{
+  "name": "mindzoo-test-js",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "cucumber-js",
+    "test:coverage": "c8 cucumber-js"
+  },
+  "devDependencies": {
+    "@cucumber/cucumber": "^11.0.0",
+    "c8": "^10.0.0"
+  },
+  "dependencies": {
+    "@fetsorn/csvs-js": "^0.29.1",
+    "@fetsorn/mindzoo": "file:../../js",
+    "git-http-mock-server": "^2.0.0",
+    "isomorphic-git": "1.37.4"
+  }
+}
