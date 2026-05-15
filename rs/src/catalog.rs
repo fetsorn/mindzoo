@@ -38,7 +38,7 @@ fn catalog_branch_values() -> Vec<Value> {
 }
 
 /// Catalog manages the ephemeral root dataset that indexes all minds in a directory.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Catalog {
     /// Parent directory containing all mind directories and the root catalog.
     dir: PathBuf,
@@ -230,7 +230,13 @@ impl Catalog {
                 None => &mind_path_str,
             };
 
-            let mind_entry = self.describe_mind(uuid, federation).await?;
+            let mind_entry = match self.describe_mind(uuid, federation).await {
+                Ok(entry) => entry,
+                Err(e) => {
+                    log::warn!("catalog::rebuild skipping {}: {}", mind_path_str, e);
+                    continue;
+                }
+            };
             drain_stream_boxed(catalog_storage.sparql(Kind::Update, vec![mind_entry])).await?;
         }
 

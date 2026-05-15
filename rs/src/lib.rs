@@ -23,9 +23,10 @@ use std::pin::Pin;
 /// layout on startup, indexing all managed datasets.
 ///
 /// Single entry point: `sparql(kind, graph, query)` returns a stream of entries.
+#[derive(Debug)]
 pub struct Mindzoo {
     catalog: Catalog,
-    federation: Federation,
+    pub federation: Federation,
 }
 
 impl Mindzoo {
