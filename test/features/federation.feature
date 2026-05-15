@@ -2,23 +2,23 @@ Feature: Federation settle
 
   Scenario: Settle initializes git and commits
     Given a zoo directory
-    And a mind "abc123-alpha" with schema:
+    And a mind "alpha" with uuid "abc123" and schema:
       """json
       {"_": "_", "event": ["actdate"]}
       """
-    When I settle the mind "abc123-alpha"
-    Then the mind "abc123-alpha" has a ".git" directory
-    And the git log of "abc123-alpha" has at least 1 commit
+    When I settle the mind "alpha"
+    Then the mind "alpha" has a ".git" directory
+    And the git log of "alpha" has at least 1 commit
 
   Scenario: Settle is idempotent
     Given a zoo directory
-    And a mind "abc123-alpha" with schema:
+    And a mind "alpha" with uuid "abc123" and schema:
       """json
       {"_": "_", "event": ["actdate"]}
       """
-    When I settle the mind "abc123-alpha"
-    And I settle the mind "abc123-alpha"
-    Then the mind "abc123-alpha" has a ".git" directory
+    When I settle the mind "alpha"
+    And I settle the mind "alpha"
+    Then the mind "alpha" has a ".git" directory
 
   Scenario: Settle with origin clones into empty directory
     Given a zoo directory

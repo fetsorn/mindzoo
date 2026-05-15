@@ -10,8 +10,8 @@ Feature: Catalog induct — clone from remote
         {"_": "branch", "branch": "event", "@en": "Record"}
       ]
       """
-    Then the zoo has a "abc123-alpha" directory
-    And the mind at "abc123-alpha" contains files from the remote
+    Then the zoo has an "alpha" directory
+    And the mind at "alpha" contains files from the remote
 
   Scenario: Clone writes mind entry to catalog
     Given a zoo directory

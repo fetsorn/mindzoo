@@ -2,11 +2,11 @@ Feature: Catalog describe
 
   Scenario: Describe returns mind object with uuid and name
     Given a zoo directory
-    And a mind "abc123-alpha" with schema:
+    And a mind "alpha" with uuid "abc123" and schema:
       """json
       {"_": "_", "event": ["actdate", "category"]}
       """
-    And the mind "abc123-alpha" has branch records:
+    And the mind "alpha" has branch records:
       """json
       [
         {"_": "branch", "branch": "event", "@en": "Record", "@ru": "Запись"},
@@ -24,7 +24,7 @@ Feature: Catalog describe
 
   Scenario: Describe mind with no origin has no origin fields
     Given a zoo directory
-    And a mind "abc123-alpha" with schema:
+    And a mind "alpha" with uuid "abc123" and schema:
       """json
       {"_": "_", "event": ["actdate"]}
       """
@@ -34,7 +34,7 @@ Feature: Catalog describe
 
   Scenario: Describe root self-describes the catalog
     Given a zoo directory
-    And a mind "abc123-alpha" with schema:
+    And a mind "alpha" with uuid "abc123" and schema:
       """json
       {"_": "_", "event": ["actdate"]}
       """

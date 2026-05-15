@@ -8,11 +8,11 @@ Feature: Catalog rebuild
 
   Scenario: Rebuild discovers minds
     Given a zoo directory
-    And a mind "abc123-alpha" with schema:
+    And a mind "alpha" with uuid "abc123" and schema:
       """json
       {"_": "_", "event": ["actdate"]}
       """
-    And a mind "def456-beta" with schema:
+    And a mind "beta" with uuid "def456" and schema:
       """json
       {"_": "_", "datum": ["sayname"]}
       """
@@ -21,7 +21,7 @@ Feature: Catalog rebuild
 
   Scenario: Rebuild skips directories without csvs dataset
     Given a zoo directory
-    And a mind "abc123-alpha" with schema:
+    And a mind "alpha" with uuid "abc123" and schema:
       """json
       {"_": "_", "event": ["actdate"]}
       """
@@ -31,7 +31,7 @@ Feature: Catalog rebuild
 
   Scenario: Rebuild is idempotent
     Given a zoo directory
-    And a mind "abc123-alpha" with schema:
+    And a mind "alpha" with uuid "abc123" and schema:
       """json
       {"_": "_", "event": ["actdate"]}
       """

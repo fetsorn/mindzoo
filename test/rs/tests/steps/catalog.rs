@@ -25,21 +25,27 @@ async fn given_zoo_dir(world: &mut MindzooWorld) {
     world.create_zoo_dir();
 }
 
-#[given(expr = "a mind {string} with schema:")]
-async fn given_mind_with_schema(
+#[given(expr = "a mind {string} with uuid {string} and schema:")]
+async fn given_mind_with_uuid_and_schema(
     world: &mut MindzooWorld,
     step: &cucumber::gherkin::Step,
-    folder_name: String,
+    name: String,
+    uuid: String,
 ) {
-    let dir = world.mind_path(&folder_name);
+    let dir = world.mind_path(&name);
     let docstring = step.docstring().expect("docstring required");
     let schema: serde_json::Value = serde_json::from_str(strip_docstring(docstring)).unwrap();
 
     fs::create_dir_all(&dir).unwrap();
 
     let dataset = Dataset::create(&dir, false).await.unwrap();
-    let schema_entry: Entry = schema.try_into().unwrap();
 
+    // write uuid to version record
+    let version_entry: Entry = json!({"_": ".", "uuid": &uuid}).try_into().unwrap();
+    dataset.update_record(vec![version_entry]).await.unwrap();
+
+    let schema_entry: Entry = schema.try_into().unwrap();
+    let dataset = Dataset::open(&dir).await.unwrap();
     dataset.update_record(vec![schema_entry]).await.unwrap();
 }
 
@@ -295,6 +301,23 @@ async fn then_mind_has_schema_trunk(world: &mut MindzooWorld, name: String, trun
         "expected schema to have trunk \"{}\"",
         trunk
     );
+}
+
+#[then(expr = "the mind at {string} has uuid {string} in its version record")]
+async fn then_mind_has_uuid_in_version(world: &mut MindzooWorld, name: String, expected_uuid: String) {
+    let dir = world.mind_path(&name);
+    let dataset = Dataset::open(&dir).await.unwrap();
+    let query: Entry = json!({"_": "."}).try_into().unwrap();
+    let records = dataset.select_record(vec![query], true).await.unwrap();
+
+    let found_uuid = records.first().and_then(|v| {
+        v.leaves.get("uuid")
+            .or_else(|| v.leaves.get("id"))
+            .and_then(|entries| entries.first())
+            .and_then(|e| e.base_value.as_deref())
+    });
+
+    assert_eq!(found_uuid, Some(expected_uuid.as_str()), "expected uuid {} in version record", expected_uuid);
 }
 
 #[then(expr = "the mind at {string} has a branch record for {string}")]

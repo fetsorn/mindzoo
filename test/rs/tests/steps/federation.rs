@@ -22,7 +22,7 @@ async fn given_fixture_repo(world: &mut MindzooWorld, repo_name: String, uuid: S
     let csvs_dir = src_dir.join("csvs");
 
     fs::create_dir_all(&csvs_dir).unwrap();
-    fs::write(csvs_dir.join(".csvs.csv"), format!("uuid\n{uuid}\n")).unwrap();
+    fs::write(csvs_dir.join(".csvs.csv"), format!("uuid,{uuid}\n")).unwrap();
     fs::write(csvs_dir.join("_-_.csv"), "_\n_\n").unwrap();
 
     let mut index = repo.index().unwrap();

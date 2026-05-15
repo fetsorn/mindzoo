@@ -12,15 +12,22 @@ Given("a zoo directory", function () {
   this.createZooDir();
 });
 
-Given("a mind {string} with schema:", async function (folderName, docstring) {
-  const dir = this.mindPath(folderName);
-  const schema = JSON.parse(docstring);
+Given(
+  "a mind {string} with uuid {string} and schema:",
+  async function (name, uuid, docstring) {
+    const dir = this.mindPath(name);
+    const schema = JSON.parse(docstring);
 
-  fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true });
 
-  await csvs.init({ fs, dir });
-  await csvs.updateRecord({ fs, dir, query: schema });
-});
+    await csvs.init({ fs, dir });
+
+    // write uuid to version record
+    await csvs.updateRecord({ fs, dir, query: { _: ".", uuid } });
+
+    await csvs.updateRecord({ fs, dir, query: schema });
+  },
+);
 
 Given("an empty directory {string}", function (name) {
   const dir = this.mindPath(name);
@@ -30,8 +37,8 @@ Given("an empty directory {string}", function (name) {
 
 Given(
   "the mind {string} has branch records:",
-  async function (folderName, docstring) {
-    const dir = this.mindPath(folderName);
+  async function (name, docstring) {
+    const dir = this.mindPath(name);
     const branches = JSON.parse(docstring);
 
     for (const branch of branches) {
@@ -173,6 +180,22 @@ Then(
       schema[trunk] !== undefined,
       `expected schema to have trunk "${trunk}"`,
     );
+  },
+);
+
+Then(
+  "the mind at {string} has uuid {string} in its version record",
+  async function (folderName, expectedUuid) {
+    const dir = this.mindPath(folderName);
+    const [versionRecord] = await csvs.selectRecord({
+      fs,
+      dir,
+      query: [{ _: "." }],
+    });
+
+    const foundUuid = versionRecord.uuid ?? versionRecord.id;
+
+    assert.equal(foundUuid, expectedUuid);
   },
 );
 

@@ -2,7 +2,7 @@ Feature: Catalog induct — existing mind
 
   Scenario: Induct existing mind with new name renames folder
     Given a zoo directory
-    And a mind "abc123-alpha" with schema:
+    And a mind "alpha" with uuid "abc123" and schema:
       """json
       {"_": "_", "event": ["actdate"]}
       """
@@ -14,12 +14,12 @@ Feature: Catalog induct — existing mind
         {"_": "branch", "branch": "actdate", "trunk": "event", "@en": "Date"}
       ]
       """
-    Then the zoo has a "abc123-renamed" directory
-    And the zoo does not have a "abc123-alpha" directory
+    Then the zoo has a "renamed" directory
+    And the zoo does not have an "alpha" directory
 
   Scenario: Induct existing mind with same name keeps folder
     Given a zoo directory
-    And a mind "abc123-alpha" with schema:
+    And a mind "alpha" with uuid "abc123" and schema:
       """json
       {"_": "_", "event": ["actdate"]}
       """
@@ -31,11 +31,11 @@ Feature: Catalog induct — existing mind
         {"_": "branch", "branch": "actdate", "trunk": "event", "@en": "Date"}
       ]
       """
-    Then the zoo has a "abc123-alpha" directory
+    Then the zoo has an "alpha" directory
 
   Scenario: Induct existing mind with new branches overwrites schema
     Given a zoo directory
-    And a mind "abc123-alpha" with schema:
+    And a mind "alpha" with uuid "abc123" and schema:
       """json
       {"_": "_", "event": ["actdate"]}
       """
@@ -47,4 +47,4 @@ Feature: Catalog induct — existing mind
         {"_": "branch", "branch": "sayname", "trunk": "datum", "@en": "Name"}
       ]
       """
-    Then the mind at "abc123-alpha" has a schema with "datum" trunk
+    Then the mind at "alpha" has a schema with "datum" trunk

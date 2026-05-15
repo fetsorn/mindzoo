@@ -27,7 +27,7 @@ Given(
     fs.mkdirSync(csvsDir, { recursive: true });
     fs.writeFileSync(
       path.join(csvsDir, ".csvs.csv"),
-      `uuid\n${uuid}\n`,
+      `uuid,${uuid}\n`,
       "utf8",
     );
     fs.writeFileSync(path.join(csvsDir, "_-_.csv"), `_\n_\n`, "utf8");
