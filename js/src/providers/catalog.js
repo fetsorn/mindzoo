@@ -5,15 +5,36 @@ import catalogSchemaRecord from "@/providers/catalog_schema_record.json";
 import catalogBranchRecords from "@/providers/catalog_branch_records.json";
 
 async function locate({ fs, dir }, mind) {
-  const existingMind = (await fs.promises.readdir(dir)).find(
-    (m) => m === mind || m.startsWith(mind + "-"),
-  );
+  const entries = await fs.promises.readdir(dir);
 
-  if (existingMind === undefined) {
-    return undefined;
-  } else {
-    return `${dir}/${existingMind}`;
+  for (const entry of entries) {
+    const entryPath = `${dir}/${entry}`;
+
+    // check csvs/.csvs.csv for uuid/id match
+    try {
+      const storage = csvs(fs, entryPath);
+      const [versionRecord] = await Array.fromAsync(
+        storage.sparql({ kind: "SELECT", query: { _: "." } }),
+      );
+
+      if (versionRecord) {
+        const foundUuid = versionRecord.uuid ?? versionRecord.id;
+
+        if (foundUuid === mind) {
+          return entryPath;
+        }
+      }
+    } catch (e) {
+      // no .csvs.csv, fall through
+    }
+
+    // fallback: match folder name
+    if (entry === mind) {
+      return entryPath;
+    }
   }
+
+  return undefined;
 }
 
 async function retire({ fs, dir }, mind) {
@@ -29,11 +50,19 @@ async function retire({ fs, dir }, mind) {
 async function describeMind({ fs, dir, federation }, mind) {
   const dirMind = await locate({ fs, dir }, mind);
 
-  const mindPath = path.basename(dirMind);
-
-  const [uuid, name] = mindPath.split("-");
+  const name = path.basename(dirMind);
 
   const storageMind = csvs(fs, dirMind);
+
+  // read uuid from csvs/.csvs.csv version record
+  const [versionRecord] = await Array.fromAsync(
+    storageMind.sparql({ kind: "SELECT", query: { _: "." } }),
+  );
+
+  const uuid =
+    versionRecord && (versionRecord.uuid ?? versionRecord.id)
+      ? versionRecord.uuid ?? versionRecord.id
+      : mind;
 
   const [schemaRecord] = await Array.fromAsync(
     storageMind.sparql({
@@ -95,7 +124,26 @@ async function rebuild({ fs, dir, federation }) {
 
     const dirMind = path.join(dir, mindPath);
 
-    const [uuid, name] = mindPath.split("-");
+    // read uuid from csvs/.csvs.csv version record
+    const storageMind = csvs(fs, dirMind);
+    let versionRecord;
+    try {
+      [versionRecord] = await Array.fromAsync(
+        storageMind.sparql({ kind: "SELECT", query: { _: "." } }),
+      );
+    } catch (e) {
+      console.log(`catalog::rebuild skipping ${mindPath} — no .csvs.csv`);
+      continue;
+    }
+
+    const uuid = versionRecord && (versionRecord.uuid ?? versionRecord.id);
+
+    if (!uuid) {
+      console.log(
+        `catalog::rebuild skipping ${mindPath} — no uuid in .csvs.csv`,
+      );
+      continue;
+    }
 
     const mind = await describeMind({ fs, dir, federation }, uuid);
 
@@ -110,7 +158,9 @@ async function rebuild({ fs, dir, federation }) {
 async function induct({ fs, dir, federation }, record) {
   const mind = record.mind;
 
-  const name = Array.isArray(record.name) ? record.name[0] : record.name;
+  // if no name, use uuid as name
+  const nameRaw = Array.isArray(record.name) ? record.name[0] : record.name;
+  const name = nameRaw !== undefined ? nameRaw : mind;
 
   const origin_url = Array.isArray(record.origin_url)
     ? record.origin_url[0]
@@ -129,7 +179,34 @@ async function induct({ fs, dir, federation }, record) {
 
   const isNew = dirMind === undefined;
 
-  const dirMindNew = `${dir}/${mind}${name !== undefined ? `-${name}` : ""}`;
+  // if folder name collides with a different uuid, use name-uuid
+  let dirMindNew = `${dir}/${name}`;
+  if (isNew) {
+    let folderExists = false;
+    try {
+      await fs.promises.stat(dirMindNew);
+      folderExists = true;
+    } catch (e) {
+      // doesn't exist, good
+    }
+
+    if (folderExists) {
+      let existingUuid;
+      try {
+        const s = csvs(fs, dirMindNew);
+        const [vr] = await Array.fromAsync(
+          s.sparql({ kind: "SELECT", query: { _: "." } }),
+        );
+        existingUuid = vr && (vr.uuid ?? vr.id);
+      } catch (e) {
+        // no .csvs.csv
+      }
+
+      if (existingUuid !== mind) {
+        dirMindNew = `${dir}/${name}-${mind}`;
+      }
+    }
+  }
 
   // if record has origin_url it can be cloned
   const hasURL = origin.url !== undefined;
@@ -139,7 +216,31 @@ async function induct({ fs, dir, federation }, record) {
       // clone
       await federation.settle(dirMindNew, origin);
 
-      const mindRecord = await describeMind({ fs, dir, federation }, record.mind);
+      // read uuid from cloned repo's version record
+      const clonedStorage = csvs(fs, dirMindNew);
+      let clonedVersion;
+      try {
+        [clonedVersion] = await Array.fromAsync(
+          clonedStorage.sparql({ kind: "SELECT", query: { _: "." } }),
+        );
+      } catch (e) {
+        // no .csvs.csv
+      }
+
+      const clonedUuid =
+        clonedVersion && (clonedVersion.uuid ?? clonedVersion.id);
+
+      if (!clonedUuid) {
+        console.log(
+          `catalog::induct cloned repo has no uuid, skipping ${dirMindNew}`,
+        );
+        return;
+      }
+
+      const mindRecord = await describeMind(
+        { fs, dir, federation },
+        clonedUuid,
+      );
 
       const dirCatalog = path.join(dir, "root");
 
@@ -152,6 +253,12 @@ async function induct({ fs, dir, federation }, record) {
       return;
     } else {
       await fs.promises.mkdir(dirMindNew);
+
+      // write uuid to csvs/.csvs.csv version record
+      const newStorage = csvs(fs, dirMindNew);
+      await Array.fromAsync(
+        newStorage.sparql({ kind: "UPDATE", query: { _: ".", uuid: mind } }),
+      );
     }
   } else {
     await fs.promises.rename(dirMind, dirMindNew);
