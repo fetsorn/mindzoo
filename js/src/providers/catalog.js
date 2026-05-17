@@ -217,7 +217,10 @@ async function induct({ fs, dir, federation }, record) {
     const newStorage = csvs(fs, dirMindNew);
 
     await Array.fromAsync(
-      newStorage.sparql({ kind: "UPDATE", query: { _: ".", uuid: mind } }),
+      newStorage.sparql({
+        kind: "UPDATE",
+        query: { _: ".", version: "0.0.4", uuid: mind },
+      }),
     );
   } else {
     await fs.promises.rename(dirMind, dirMindNew);
