@@ -113,11 +113,11 @@ async fn when_settle(world: &mut MindzooWorld, name: String) {
     world.zoo.as_ref().unwrap().federation.settle(&dir, None).await.unwrap();
 }
 
-#[when(expr = "I settle {string} with origin {string}")]
-async fn when_settle_with_origin(
+#[when(expr = "I clone {string} into {string}")]
+async fn when_clone(
     world: &mut MindzooWorld,
-    name: String,
     origin_template: String,
+    name: String,
 ) {
     let url = world.resolve_origin(&origin_template);
     let dir = world.mind_path(&name);
@@ -129,7 +129,7 @@ async fn when_settle_with_origin(
 
     let origin = mindzoo::Origin::new(&url, None::<&str>);
 
-    world.zoo.as_ref().unwrap().federation.settle(&dir, Some(&origin)).await.unwrap();
+    world.zoo.as_ref().unwrap().federation.clone(&dir, &origin).await.unwrap();
 }
 
 #[when(expr = "I write a file {string} in mind {string}")]

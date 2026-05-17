@@ -315,13 +315,6 @@ impl Catalog {
         // if no name, use uuid as name
         let name = get_leaf_value(record, "name").unwrap_or(mind);
 
-        let origin_url = get_leaf_entry(record, "origin_url");
-        let origin = origin_url.and_then(|ou| {
-            let url = ou.base_value.as_ref()?;
-            let token = get_leaf_value(&ou, "origin_token");
-            Some(git2kit::Origin::new(url, token))
-        });
-
         let dir_mind_existing = self.locate(mind).await?;
         let is_new = dir_mind_existing.is_none();
 
@@ -345,48 +338,12 @@ impl Catalog {
         }
 
         if is_new {
-            if let Some(ref origin) = origin {
-                // clone
-                federation.settle(&dir_mind_new, Some(origin)).await?;
+            fs::create_dir_all(&dir_mind_new).await?;
 
-                // read uuid from cloned repo's version record
-                let cloned_storage = Storage::new(dir_mind_new.clone());
-                let vq: Entry = json!({"_": "."}).try_into()?;
-                let cloned_vr = collect_stream(
-                    cloned_storage.sparql(Kind::Select, vec![vq]),
-                ).await.ok();
-
-                let cloned_uuid = cloned_vr.and_then(|r| r.first().and_then(|v| {
-                    v.leaves.get("uuid")
-                        .or_else(|| v.leaves.get("id"))
-                        .and_then(|entries| entries.first())
-                        .and_then(|e| e.base_value.clone())
-                }));
-
-                let cloned_uuid = match cloned_uuid {
-                    Some(u) => u,
-                    None => {
-                        log::warn!("catalog::induct cloned repo has no uuid, skipping {}", dir_mind_new.display());
-                        return Ok(());
-                    }
-                };
-
-                // read actual schema from cloned repo and write to catalog
-                let mind_entry = self.describe_mind(&cloned_uuid, federation).await?;
-
-                let dir_catalog = self.dir.join("root");
-                let catalog_storage = Storage::new(dir_catalog);
-                drain_stream_boxed(catalog_storage.sparql(Kind::Update, vec![mind_entry])).await?;
-
-                return Ok(());
-            } else {
-                fs::create_dir_all(&dir_mind_new).await?;
-
-                // write uuid to csvs/.csvs.csv version record
-                let new_mind_storage = Storage::new(dir_mind_new.clone());
-                let version_entry: Entry = json!({"_": ".", "uuid": mind}).try_into()?;
-                drain_stream_boxed(new_mind_storage.sparql(Kind::Update, vec![version_entry])).await?;
-            }
+            // write uuid to csvs/.csvs.csv version record
+            let new_mind_storage = Storage::new(dir_mind_new.clone());
+            let version_entry: Entry = json!({"_": ".", "uuid": mind}).try_into()?;
+            drain_stream_boxed(new_mind_storage.sparql(Kind::Update, vec![version_entry])).await?;
         } else if let Some(existing) = dir_mind_existing {
             if existing != dir_mind_new {
                 fs::rename(&existing, &dir_mind_new).await?;
@@ -410,6 +367,13 @@ impl Catalog {
                 drain_stream_boxed(mind_storage.sparql(Kind::Update, vec![meta_entry])).await?;
             }
         }
+
+        // extract origin for settle (set remote + sync)
+        let origin = get_leaf_entry(record, "origin_url").and_then(|ou| {
+            let url = ou.base_value.as_ref()?;
+            let token = get_leaf_value(&ou, "origin_token");
+            Some(git2kit::Origin::new(url, token))
+        });
 
         // settle
         federation.settle(&dir_mind_new, origin.as_ref()).await?;

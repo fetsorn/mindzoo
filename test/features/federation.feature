@@ -1,4 +1,4 @@
-Feature: Federation settle
+Feature: Federation
 
   Scenario: Settle initializes git and commits
     Given a zoo directory
@@ -20,10 +20,10 @@ Feature: Federation settle
     And I settle the mind "alpha"
     Then the mind "alpha" has a ".git" directory
 
-  Scenario: Settle with origin clones into empty directory
+  Scenario: Clone creates directory from remote
     Given a zoo directory
     And a mock git server with repo "test-mind" that has uuid "remoteid"
-    When I settle "new-mind" with origin "{server}/test-mind"
+    When I clone "{server}/test-mind" into "new-mind"
     Then the zoo has a "new-mind" directory
     And the mind "new-mind" has a ".git" directory
 

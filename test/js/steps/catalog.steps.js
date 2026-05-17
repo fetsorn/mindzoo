@@ -91,22 +91,6 @@ When(
   },
 );
 
-When(
-  "I induct a mind with uuid {string} and name {string} and origin {string} and branches:",
-  async function (uuid, name, originTemplate, docstring) {
-    const branches = JSON.parse(docstring);
-    const url = this.resolveOrigin(originTemplate);
-    this.zoo = this.zoo ?? (await createMindZoo({ fs, dir: this.zooDir, http }));
-
-    await this.zoo.catalog.induct({
-      _: "mind",
-      mind: uuid,
-      name,
-      origin_url: { _: "origin_url", origin_url: url },
-      branch: branches,
-    });
-  },
-);
 
 When("I retire {string}", async function (mind) {
   this.zoo = this.zoo ?? (await createMindZoo({ fs, dir: this.zooDir, http }));

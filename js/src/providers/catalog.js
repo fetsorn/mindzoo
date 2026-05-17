@@ -162,18 +162,6 @@ async function induct({ fs, dir, federation }, record) {
   const nameRaw = Array.isArray(record.name) ? record.name[0] : record.name;
   const name = nameRaw !== undefined ? nameRaw : mind;
 
-  const origin_url = Array.isArray(record.origin_url)
-    ? record.origin_url[0]
-    : record.origin_url;
-
-  const origin = {
-    url: origin_url !== undefined ? origin_url.origin_url : origin_url,
-    token:
-      origin_url !== undefined && typeof origin_url === "object"
-        ? origin_url.origin_token
-        : undefined,
-  };
-
   // search root for mind
   const dirMind = await locate({ fs, dir }, record.mind);
 
@@ -181,6 +169,7 @@ async function induct({ fs, dir, federation }, record) {
 
   // if folder name collides with a different uuid, use name-uuid
   let dirMindNew = `${dir}/${name}`;
+
   if (isNew) {
     let folderExists = false;
     try {
@@ -208,60 +197,14 @@ async function induct({ fs, dir, federation }, record) {
     }
   }
 
-  // if record has origin_url it can be cloned
-  const hasURL = origin.url !== undefined;
-
   if (isNew) {
-    if (hasURL) {
-      // clone
-      await federation.settle(dirMindNew, origin);
+    await fs.promises.mkdir(dirMindNew);
 
-      // read uuid from cloned repo's version record
-      const clonedStorage = csvs(fs, dirMindNew);
-
-      let clonedVersion;
-
-      try {
-        [clonedVersion] = await Array.fromAsync(
-          clonedStorage.sparql({ kind: "SELECT", query: { _: "." } }),
-        );
-      } catch (e) {
-        // no .csvs.csv
-      }
-
-      const clonedUuid =
-        clonedVersion && (clonedVersion.uuid ?? clonedVersion.id);
-
-      if (!clonedUuid) {
-        console.log(
-          `catalog::induct cloned repo has no uuid, skipping ${dirMindNew}`,
-        );
-        return;
-      }
-
-      const mindRecord = await describeMind(
-        { fs, dir, federation },
-        clonedUuid,
-      );
-
-      const dirCatalog = path.join(dir, "root");
-
-      const storage = csvs(fs, dirCatalog);
-
-      await Array.fromAsync(
-        storage.sparql({ kind: "UPDATE", query: mindRecord }),
-      );
-
-      return;
-    } else {
-      await fs.promises.mkdir(dirMindNew);
-
-      // write uuid to csvs/.csvs.csv version record
-      const newStorage = csvs(fs, dirMindNew);
-      await Array.fromAsync(
-        newStorage.sparql({ kind: "UPDATE", query: { _: ".", uuid: mind } }),
-      );
-    }
+    // write uuid to csvs/.csvs.csv version record
+    const newStorage = csvs(fs, dirMindNew);
+    await Array.fromAsync(
+      newStorage.sparql({ kind: "UPDATE", query: { _: ".", uuid: mind } }),
+    );
   } else {
     await fs.promises.rename(dirMind, dirMindNew);
   }
@@ -279,6 +222,19 @@ async function induct({ fs, dir, federation }, record) {
       storage.sparql({ kind: "UPDATE", query: metaRecord }),
     );
   }
+
+  // extract origin for settle (set remote + sync)
+  const origin_url = Array.isArray(record.origin_url)
+    ? record.origin_url[0]
+    : record.origin_url;
+
+  const origin =
+    origin_url !== undefined && typeof origin_url === "object"
+      ? {
+          url: origin_url.origin_url,
+          token: origin_url.origin_token,
+        }
+      : undefined;
 
   // gitinit add commit set remote & token
   await federation.settle(dirMindNew, origin);

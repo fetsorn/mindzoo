@@ -266,6 +266,27 @@ export async function resolve(fs, http, dir, resolutions) {
     ...tokenPartial,
   });
 
+  // if repo has no commits (empty), just checkout the remote branch
+  let hasHead = true;
+
+  try {
+    await git.resolveRef({ fs, dir, ref: "HEAD" });
+  } catch {
+    hasHead = false;
+  }
+
+  if (!hasHead) {
+    try {
+      await git.checkout({ fs, dir, ref: "main", force: true });
+    } catch (e) {
+      console.log("checkout after fetch into empty repo", e);
+
+      return { ok: false };
+    }
+
+    return { ok: true };
+  }
+
   let conflicts;
 
   try {
@@ -331,13 +352,6 @@ export async function resolve(fs, http, dir, resolutions) {
 }
 
 async function settle(fs, http, dir, origin) {
-  const dirExists = await exists(fs, dir);
-
-  // clone
-  if (origin && !dirExists) {
-    await clone(fs, http, dir, origin);
-  }
-
   // init
   await gitinit(fs, dir);
 
@@ -361,6 +375,7 @@ async function settle(fs, http, dir, origin) {
 
 export default (fs, http) => {
   return {
+    clone: (dir, remote) => clone(fs, http, dir, remote),
     settle: (dir, origin) => settle(fs, http, dir, origin),
     getOrigin: (dir) => getOrigin(fs, dir),
   };

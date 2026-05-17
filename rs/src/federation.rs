@@ -13,6 +13,22 @@ impl Federation {
         Federation
     }
 
+    /// Clone a remote repository into dir.
+    pub async fn clone(&self, dir: &Path, origin: &Origin) -> Result<()> {
+        let dir = dir.to_path_buf();
+        let origin = origin.clone();
+
+        tokio::task::spawn_blocking(move || {
+            log::info!("federation::clone to {}", dir.display());
+            let repo = Repository::clone(dir.clone(), &origin)?;
+            repo.set_origin(origin)?;
+            log::info!("federation::clone done");
+            Ok(())
+        })
+        .await
+        .map_err(|e| crate::Error::from_message(format!("spawn_blocking: {e}")))?
+    }
+
     /// Full lifecycle: ensure git repo, commit changes, set remote, resolve (fetch+merge+push).
     ///
     /// If origin is provided and dir doesn't exist, clone.
@@ -37,19 +53,6 @@ impl Federation {
 /// Blocking implementation of settle, run via spawn_blocking.
 fn settle_blocking(dir: &PathBuf, origin: Option<&Origin>) -> Result<()> {
     log::info!("federation::settle dir={} has_origin={}", dir.display(), origin.is_some());
-
-    // clone if origin provided and dir doesn't exist
-    if let Some(origin) = origin {
-        if !dir.exists() {
-            log::info!("federation::settle cloning to {}", dir.display());
-            let repo = Repository::clone(dir.to_path_buf(), origin)?;
-            repo.set_origin(origin.clone())?;
-            log::info!("federation::settle clone done");
-            return Ok(());
-        } else {
-            log::info!("federation::settle dir exists, skipping clone");
-        }
-    }
 
     // init if no .git
     let git_dir = dir.join(".git");
