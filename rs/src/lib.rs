@@ -25,7 +25,7 @@ use std::pin::Pin;
 /// Single entry point: `sparql(kind, graph, query)` returns a stream of entries.
 #[derive(Debug)]
 pub struct Mindzoo {
-    catalog: Catalog,
+    pub catalog: Catalog,
     pub federation: Federation,
 }
 

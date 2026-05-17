@@ -55,6 +55,9 @@ impl Catalog {
     pub async fn locate(&self, mind: &str) -> Result<Option<PathBuf>> {
         let mut entries = fs::read_dir(&self.dir).await?;
 
+        let mut found: Option<PathBuf> = None;
+        let mut fallback: Option<PathBuf> = None;
+
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
 
@@ -74,19 +77,28 @@ impl Catalog {
                 });
 
                 if found_uuid == Some(mind) {
-                    return Ok(Some(path));
+                    if let Some(ref prev) = found {
+                        log::warn!(
+                            "duplicate uuid {mind}: {} and {}",
+                            prev.display(),
+                            path.display()
+                        );
+                    } else {
+                        found = Some(path);
+                    }
+                    continue;
                 }
             }
 
             // fallback: match folder name
             let name_str = entry.file_name();
             let name_str = name_str.to_string_lossy();
-            if name_str == mind {
-                return Ok(Some(entry.path()));
+            if fallback.is_none() && name_str == mind {
+                fallback = Some(entry.path());
             }
         }
 
-        Ok(None)
+        Ok(found.or(fallback))
     }
 
     /// Describe a mind by reading its schema, branches, and git origin.
@@ -377,6 +389,86 @@ impl Catalog {
 
         // settle
         federation.settle(&dir_mind_new, origin.as_ref()).await?;
+
+        // write mind entry to root catalog so SELECT finds it immediately
+        self.rebuild_mind(mind, federation).await?;
+
+        Ok(())
+    }
+
+    /// Apply a merge strategy and rebuild the mind's catalog entry.
+    pub async fn merge(
+        &self,
+        mind: &str,
+        strategy: &str,
+        federation: &Federation,
+    ) -> Result<()> {
+        let dir_mind = self
+            .locate(mind)
+            .await?
+            .ok_or_else(|| Error::from_message(format!("mind not found: {mind}")))?;
+
+        // read old uuid before merge (may change after theirs)
+        let old_uuid = {
+            let s = Storage::new(dir_mind.clone());
+            let vq: Entry = json!({"_": "."}).try_into()?;
+            collect_stream(s.sparql(Kind::Select, vec![vq]))
+                .await
+                .ok()
+                .and_then(|r| {
+                    r.first().and_then(|v| {
+                        v.leaves.get("uuid")
+                            .or_else(|| v.leaves.get("id"))
+                            .and_then(|entries| entries.first())
+                            .and_then(|e| e.base_value.clone())
+                    })
+                })
+        };
+
+        federation.merge(&dir_mind, strategy).await?;
+
+        // read new uuid after merge
+        let new_uuid = {
+            let s = Storage::new(dir_mind.clone());
+            let vq: Entry = json!({"_": "."}).try_into()?;
+            collect_stream(s.sparql(Kind::Select, vec![vq]))
+                .await
+                .ok()
+                .and_then(|r| {
+                    r.first().and_then(|v| {
+                        v.leaves.get("uuid")
+                            .or_else(|| v.leaves.get("id"))
+                            .and_then(|entries| entries.first())
+                            .and_then(|e| e.base_value.clone())
+                    })
+                })
+        }.unwrap_or_else(|| mind.to_string());
+
+        // if uuid changed, delete the old catalog entry
+        let dir_catalog = self.dir.join("root");
+        let catalog_storage = Storage::new(dir_catalog.clone());
+        if let Some(old) = old_uuid.as_deref() {
+            if old != new_uuid {
+                let delete_query: Entry = json!({"_": "mind", "mind": old}).try_into()?;
+                drain_stream_boxed(catalog_storage.sparql(Kind::Delete, vec![delete_query])).await?;
+            }
+        }
+
+        // rebuild catalog entry using new uuid (locate validates uniqueness)
+        self.rebuild_mind(&new_uuid, federation).await?;
+
+        Ok(())
+    }
+
+    /// Describe a mind and write its entry to the root catalog.
+    async fn rebuild_mind(&self, mind: &str, federation: &Federation) -> Result<()> {
+        let dir_catalog = self.dir.join("root");
+        let catalog_storage = Storage::new(dir_catalog.clone());
+        let mind_entry = self.describe_mind(mind, federation).await?;
+
+        drain_stream_boxed(catalog_storage.sparql(Kind::Update, vec![mind_entry])).await?;
+
+        federation.settle(&dir_catalog, None).await?;
 
         Ok(())
     }
