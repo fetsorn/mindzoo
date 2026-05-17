@@ -61,7 +61,7 @@ async function describeMind({ fs, dir, federation }, mind) {
 
   const uuid =
     versionRecord && (versionRecord.uuid ?? versionRecord.id)
-      ? versionRecord.uuid ?? versionRecord.id
+      ? (versionRecord.uuid ?? versionRecord.id)
       : mind;
 
   const [schemaRecord] = await Array.fromAsync(
@@ -218,7 +218,9 @@ async function induct({ fs, dir, federation }, record) {
 
       // read uuid from cloned repo's version record
       const clonedStorage = csvs(fs, dirMindNew);
+
       let clonedVersion;
+
       try {
         [clonedVersion] = await Array.fromAsync(
           clonedStorage.sparql({ kind: "SELECT", query: { _: "." } }),

@@ -241,7 +241,6 @@ export async function resolve(fs, http, dir, resolutions) {
   const remote = await getOrigin(fs, dir);
 
   const reachable = await canReach(remote.url, remote.token);
-  console.error("resolve: remote=", remote.url, "reachable=", reachable);
   if (!reachable) {
     return { ok: true };
   }
@@ -356,7 +355,7 @@ async function settle(fs, http, dir, origin) {
     // push
     await resolve(fs, http, dir);
   } catch (e) {
-    console.error("settle resolve error:", e);
+    console.log("settle resolve error:", e);
   }
 }
 

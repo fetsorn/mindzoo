@@ -49,22 +49,36 @@ async function DELETE({ fs, dir, catalog, federation }, mind, query) {
 }
 
 async function UPDATE({ fs, dir, catalog, federation }, mind, query) {
-  const dirMind = await catalog.locate(mind);
-
-  const storage = csvs(fs, dirMind);
-
-  await Array.fromAsync(storage.sparql({ kind: "UPDATE", query }));
-
-  await federation.settle(dirMind);
-
   if (mind === "root") {
     const queries = Array.isArray(query) ? query : [query];
+    const nonMindQueries = [];
 
     for (const q of queries) {
       if (q._ === "mind") {
+        // mind entries are handled by induct (which writes to catalog + settles)
         await catalog.induct(q);
+      } else {
+        nonMindQueries.push(q);
       }
     }
+
+    if (nonMindQueries.length > 0) {
+      const dirMind = await catalog.locate(mind);
+      const storage = csvs(fs, dirMind);
+
+      for (const q of nonMindQueries) {
+        await Array.fromAsync(storage.sparql({ kind: "UPDATE", query: q }));
+      }
+
+      await federation.settle(dirMind);
+    }
+  } else {
+    const dirMind = await catalog.locate(mind);
+    const storage = csvs(fs, dirMind);
+
+    await Array.fromAsync(storage.sparql({ kind: "UPDATE", query }));
+
+    await federation.settle(dirMind);
   }
 
   return new ReadableStream({

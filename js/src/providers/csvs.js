@@ -19,8 +19,6 @@ function DESCRIBE(fs, dir, query) {
         prose: true,
       });
 
-      console.log(record);
-
       controller.enqueue(record);
 
       controller.close();
