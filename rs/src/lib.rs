@@ -51,6 +51,11 @@ impl Mindzoo {
         self.catalog.locate(mind).await
     }
 
+    /// Apply a merge strategy to a mind and rebuild its catalog entry.
+    pub async fn merge(&self, mind: &str, strategy: &str) -> Result<()> {
+        self.catalog.merge(mind, strategy, &self.federation).await
+    }
+
     /// Single entry point. Returns a stream of Entry values.
     ///
     /// - SELECT: stream of matching records
