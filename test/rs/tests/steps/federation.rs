@@ -113,23 +113,20 @@ async fn when_settle(world: &mut MindzooWorld, name: String) {
     world.zoo.as_ref().unwrap().federation.settle(&dir, None).await.unwrap();
 }
 
-#[when(expr = "I clone {string} into {string}")]
-async fn when_clone(
+#[when(expr = "I merge {string} on mind {string}")]
+async fn when_merge(
     world: &mut MindzooWorld,
-    origin_template: String,
+    strategy: String,
     name: String,
 ) {
-    let url = world.resolve_origin(&origin_template);
-    let dir = world.mind_path(&name);
-
     if world.zoo.is_none() {
         let d = world.zoo_dir.clone().unwrap();
         world.zoo = Some(mindzoo::Mindzoo::new(d).await.unwrap());
     }
 
-    let origin = mindzoo::Origin::new(&url, None::<&str>);
+    let dir = world.mind_path(&name);
 
-    world.zoo.as_ref().unwrap().federation.clone(&dir, &origin).await.unwrap();
+    world.zoo.as_ref().unwrap().federation.merge(&dir, &strategy).await.unwrap();
 }
 
 #[when(expr = "I write a file {string} in mind {string}")]
@@ -150,7 +147,11 @@ async fn when_origin_changed(world: &mut MindzooWorld, name: String, origin_temp
 
     let repo = git2::Repository::open(&dir).unwrap();
 
-    repo.remote_set_url("origin", &url).unwrap();
+    // Create remote if it doesn't exist, otherwise update URL
+    match repo.find_remote("origin") {
+        Ok(_) => repo.remote_set_url("origin", &url).unwrap(),
+        Err(_) => { repo.remote("origin", &url).unwrap(); },
+    };
 }
 
 // -- Then --

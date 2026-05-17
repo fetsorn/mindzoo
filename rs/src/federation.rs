@@ -1,5 +1,5 @@
 use crate::Result;
-use git2kit::{Origin, Repository};
+use git2kit::{MergeStrategy, Origin, Repository};
 use std::path::{Path, PathBuf};
 
 /// Federation handles git operations for a mind directory:
@@ -13,16 +13,18 @@ impl Federation {
         Federation
     }
 
-    /// Clone a remote repository into dir.
-    pub async fn clone(&self, dir: &Path, origin: &Origin) -> Result<()> {
+    /// Apply a merge strategy to reconcile local and remote.
+    /// Must be called after settle has fetched (origin/main exists).
+    pub async fn merge(&self, dir: &Path, strategy: &str) -> Result<()> {
         let dir = dir.to_path_buf();
-        let origin = origin.clone();
+        let strategy = MergeStrategy::parse(strategy)?;
 
         tokio::task::spawn_blocking(move || {
-            log::info!("federation::clone to {}", dir.display());
-            let repo = Repository::clone(dir.clone(), &origin)?;
-            repo.set_origin(origin)?;
-            log::info!("federation::clone done");
+            log::info!("federation::merge({}) {}", strategy, dir.display());
+            let repo = Repository::open(&dir)?;
+
+            repo.merge(strategy)?;
+
             Ok(())
         })
         .await

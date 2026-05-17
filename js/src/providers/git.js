@@ -3,15 +3,11 @@ import diff3Merge from "diff3";
 // move to @fetsorn/isogit-lfs
 import { addLFS } from "@/providers/lfs.js";
 
-async function exists(fs, dir) {
-  try {
-    await fs.promises.stat(dir);
-
-    return true;
-  } catch {
-    return false;
-  }
-}
+export const MergeStrategy = Object.freeze({
+  AUTO: "auto",
+  THEIRS: "theirs",
+  OURS: "ours",
+});
 
 export async function gitinit(fs, dir) {
   const hasGit = (await fs.promises.readdir(dir)).includes(".git");
@@ -21,24 +17,6 @@ export async function gitinit(fs, dir) {
 
     await fs.promises.writeFile(`${dir}/.gitignore`, `.DS_Store`, "utf8");
   }
-}
-
-export async function clone(fs, http, dir, remote) {
-  const options = {
-    fs,
-    http,
-    dir,
-    url: remote.url,
-    //singleBranch: true,
-  };
-
-  if (remote.token !== undefined) {
-    options.onAuth = () => ({
-      username: remote.token,
-    });
-  }
-
-  return git.clone(options);
 }
 
 /**
@@ -237,7 +215,89 @@ async function canReach(url, token) {
   }
 }
 
-export async function resolve(fs, http, dir, resolutions) {
+// Safe auto-merge: fast-forward or three-way. Throws on conflict.
+async function mergeAuto(fs, dir) {
+  const r = await git.merge({
+    fs,
+    dir,
+    theirs: "origin/main",
+    author: {
+      name: "evenor",
+      email: "evenor@norcivilianlabs.org",
+    },
+  });
+
+  if (r.alreadyMerged === true) {
+    // nothing to do
+  } else if (r.fastForward === true) {
+    await git.checkout({ fs, dir, force: true });
+  } else {
+    await git.add({ fs, dir, filepath: "." });
+
+    await git.commit({
+      fs,
+      dir,
+      ref: "main",
+      message: "Merge origin into main",
+      parent: ["main", "origin/main"],
+    });
+  }
+}
+
+// Discard local, checkout origin/main. This IS clone / force-pull.
+async function mergeTheirs(fs, dir) {
+  const remoteOid = await git.resolveRef({
+    fs,
+    dir,
+    ref: "refs/remotes/origin/main",
+  });
+
+  await git.writeRef({
+    fs,
+    dir,
+    ref: "refs/heads/main",
+    value: remoteOid,
+    force: true,
+  });
+
+  await git.checkout({ fs, dir, ref: "main", force: true });
+}
+
+// Keep local tree, create merge commit with origin/main as parent.
+// Next settle pushes it. This IS force-push.
+async function mergeOurs(fs, dir) {
+  const ourOid = await git.resolveRef({ fs, dir, ref: "HEAD" });
+  const theirOid = await git.resolveRef({
+    fs,
+    dir,
+    ref: "refs/remotes/origin/main",
+  });
+
+  await git.commit({
+    fs,
+    dir,
+    message: "Merge (ours): keep local",
+    parent: [ourOid, theirOid],
+    author: {
+      name: "evenor",
+      email: "evenor@norcivilianlabs.org",
+    },
+  });
+}
+
+async function merge(fs, dir, strategy) {
+  if (strategy === MergeStrategy.AUTO) {
+    await mergeAuto(fs, dir);
+  } else if (strategy === MergeStrategy.THEIRS) {
+    await mergeTheirs(fs, dir);
+  } else if (strategy === MergeStrategy.OURS) {
+    await mergeOurs(fs, dir);
+  } else {
+    throw new Error(`unknown merge strategy: ${strategy}`);
+  }
+}
+
+export async function resolve(fs, http, dir) {
   const remote = await getOrigin(fs, dir);
 
   const reachable = await canReach(remote.url, remote.token);
@@ -245,8 +305,6 @@ export async function resolve(fs, http, dir, resolutions) {
     return { ok: true };
   }
 
-  // soft-serve uses "token ${remote.token}". first word CAN be Token
-  // gitea uses "token ${remote.token}". first word MUST be lower-case "token"
   const tokenPartial = remote.token
     ? {
         onAuth: () => ({
@@ -266,71 +324,12 @@ export async function resolve(fs, http, dir, resolutions) {
     ...tokenPartial,
   });
 
-  // if repo has no commits (empty), just checkout the remote branch
-  let hasHead = true;
-
   try {
-    await git.resolveRef({ fs, dir, ref: "HEAD" });
-  } catch {
-    hasHead = false;
-  }
-
-  if (!hasHead) {
-    try {
-      await git.checkout({ fs, dir, ref: "main", force: true });
-    } catch (e) {
-      console.log("checkout after fetch into empty repo", e);
-
-      return { ok: false };
-    }
-
-    return { ok: true };
-  }
-
-  let conflicts;
-
-  try {
-    // TODO collect hunks to conflicts
-    // throws if can't merge
-    const r = await git.merge({
-      fs,
-      dir,
-      theirs: "origin/main",
-      //mergeDriver: mergeDriverFactory(conflicts, resolutions),
-      author: {
-        name: "evenor",
-        email: "evenor@norcivilianlabs.org",
-      },
-    });
-
-    if (r.alreadyMerged === true) {
-      //do nothing
-    } else if (r.fastForward === true) {
-      // checkout main after fastForward
-      await git.checkout({
-        fs,
-        dir,
-        force: true,
-      });
-    } else {
-      await git.add({
-        fs,
-        dir,
-        filepath: ".",
-      });
-
-      await git.commit({
-        fs,
-        dir,
-        ref: "main",
-        message: "Merge origin into main",
-        parent: ["main", "origin/main"], // Be sure to specify the parents when creating a merge commit
-      });
-    }
+    await merge(fs, dir, MergeStrategy.AUTO);
   } catch (e) {
     console.log("merge", e);
 
-    return { ok: false, conflicts };
+    return { ok: false };
   }
 
   try {
@@ -345,7 +344,7 @@ export async function resolve(fs, http, dir, resolutions) {
   } catch (e) {
     console.log("push", e);
 
-    return { ok: false, conflicts };
+    return { ok: false };
   }
 
   return { ok: true };
@@ -375,8 +374,8 @@ async function settle(fs, http, dir, origin) {
 
 export default (fs, http) => {
   return {
-    clone: (dir, remote) => clone(fs, http, dir, remote),
     settle: (dir, origin) => settle(fs, http, dir, origin),
+    merge: (dir, strategy) => merge(fs, dir, strategy),
     getOrigin: (dir) => getOrigin(fs, dir),
   };
 };

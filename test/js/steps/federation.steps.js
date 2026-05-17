@@ -115,13 +115,12 @@ When("I settle the mind {string}", async function (name) {
 });
 
 When(
-  "I clone {string} into {string}",
-  async function (originTemplate, name) {
-    const url = this.resolveOrigin(originTemplate);
-    const dir = this.mindPath(name);
+  "I merge {string} on mind {string}",
+  async function (strategy, name) {
     this.zoo = this.zoo ?? (await createMindZoo({ fs, dir: this.zooDir, http }));
+    const dir = this.mindPath(name);
 
-    await this.zoo.federation.clone(dir, { url });
+    await this.zoo.federation.merge(dir, strategy);
   },
 );
 

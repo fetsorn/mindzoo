@@ -132,6 +132,44 @@ async fn when_induct_with_branches(
     while let Some(_) = stream.next().await {}
 }
 
+#[when(expr = "I induct a mind with uuid {string} and name {string} and origin {string} and branches:")]
+async fn when_induct_with_origin_and_branches(
+    world: &mut MindzooWorld,
+    step: &cucumber::gherkin::Step,
+    uuid: String,
+    name: String,
+    origin_template: String,
+) {
+    let docstring = step.docstring().expect("docstring required");
+    let branches: serde_json::Value = serde_json::from_str(strip_docstring(docstring)).unwrap();
+    let url = world.resolve_origin(&origin_template);
+
+    let entry: Entry = json!({
+        "_": "mind",
+        "mind": &uuid,
+        "name": &name,
+        "branch": branches,
+        "origin_url": {
+            "_": "origin_url",
+            "origin_url": &url,
+        },
+    })
+    .try_into()
+    .unwrap();
+
+    if world.zoo.is_none() {
+        let dir = world.zoo_dir.clone().unwrap();
+        world.zoo = Some(mindzoo::Mindzoo::new(dir).await.unwrap());
+    }
+
+    let zoo = world.zoo.as_ref().unwrap();
+
+    use futures_util::StreamExt;
+    let stream = zoo.sparql(mindzoo::Kind::Update, "root", vec![entry]).await.unwrap();
+    futures_util::pin_mut!(stream);
+    while let Some(_) = stream.next().await {}
+}
+
 #[when(expr = "I induct a mind with uuid {string} and no name and branches:")]
 async fn when_induct_no_name_with_branches(
     world: &mut MindzooWorld,
