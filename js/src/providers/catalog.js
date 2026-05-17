@@ -7,6 +7,9 @@ import catalogBranchRecords from "@/providers/catalog_branch_records.json";
 async function locate({ fs, dir }, mind) {
   const entries = await fs.promises.readdir(dir);
 
+  let found;
+  let fallback;
+
   for (const entry of entries) {
     const entryPath = `${dir}/${entry}`;
 
@@ -21,7 +24,11 @@ async function locate({ fs, dir }, mind) {
         const foundUuid = versionRecord.uuid ?? versionRecord.id;
 
         if (foundUuid === mind) {
-          return entryPath;
+          if (found) {
+            console.warn(`duplicate uuid ${mind}: ${found} and ${entryPath}`);
+          } else {
+            found = entryPath;
+          }
         }
       }
     } catch (e) {
@@ -29,12 +36,12 @@ async function locate({ fs, dir }, mind) {
     }
 
     // fallback: match folder name
-    if (entry === mind) {
-      return entryPath;
+    if (!fallback && entry === mind) {
+      fallback = entryPath;
     }
   }
 
-  return undefined;
+  return found ?? fallback;
 }
 
 async function retire({ fs, dir }, mind) {
@@ -104,15 +111,15 @@ async function rebuild({ fs, dir, federation }) {
 
   await fs.promises.mkdir(dirCatalog);
 
-  const storage = csvs(fs, dirCatalog);
+  const storageCatalog = csvs(fs, dirCatalog);
 
   await Array.fromAsync(
-    storage.sparql({ kind: "UPDATE", query: catalogSchemaRecord }),
+    storageCatalog.sparql({ kind: "UPDATE", query: catalogSchemaRecord }),
   );
 
   for (const branchRecord of catalogBranchRecords) {
     await Array.fromAsync(
-      storage.sparql({ kind: "UPDATE", query: branchRecord }),
+      storageCatalog.sparql({ kind: "UPDATE", query: branchRecord }),
     );
   }
 
@@ -126,7 +133,9 @@ async function rebuild({ fs, dir, federation }) {
 
     // read uuid from csvs/.csvs.csv version record
     const storageMind = csvs(fs, dirMind);
+
     let versionRecord;
+
     try {
       [versionRecord] = await Array.fromAsync(
         storageMind.sparql({ kind: "SELECT", query: { _: "." } }),
@@ -148,7 +157,9 @@ async function rebuild({ fs, dir, federation }) {
     const mind = await describeMind({ fs, dir, federation }, uuid);
 
     // write to catalog
-    await Array.fromAsync(storage.sparql({ kind: "UPDATE", query: mind }));
+    await Array.fromAsync(
+      storageCatalog.sparql({ kind: "UPDATE", query: mind }),
+    );
   }
 
   // init & commit catalog
@@ -183,9 +194,11 @@ async function induct({ fs, dir, federation }, record) {
       let existingUuid;
       try {
         const s = csvs(fs, dirMindNew);
+
         const [vr] = await Array.fromAsync(
           s.sparql({ kind: "SELECT", query: { _: "." } }),
         );
+
         existingUuid = vr && (vr.uuid ?? vr.id);
       } catch (e) {
         // no .csvs.csv
@@ -202,6 +215,7 @@ async function induct({ fs, dir, federation }, record) {
 
     // write uuid to csvs/.csvs.csv version record
     const newStorage = csvs(fs, dirMindNew);
+
     await Array.fromAsync(
       newStorage.sparql({ kind: "UPDATE", query: { _: ".", uuid: mind } }),
     );
@@ -238,6 +252,17 @@ async function induct({ fs, dir, federation }, record) {
 
   // gitinit add commit set remote & token
   await federation.settle(dirMindNew, origin);
+
+  // write mind entry to root catalog so SELECT finds it immediately
+  const dirCatalog = path.join(dir, "root");
+  const catalogStorage = csvs(fs, dirCatalog);
+  const mindEntry = await describeMind({ fs, dir, federation }, mind);
+
+  await Array.fromAsync(
+    catalogStorage.sparql({ kind: "UPDATE", query: mindEntry }),
+  );
+
+  await federation.settle(dirCatalog);
 }
 
 function describe(providers, query) {
@@ -250,7 +275,7 @@ function describe(providers, query) {
   async function* generate() {
     for (const q of queries) {
       if (q._ === "mind" && q.mind === "root") {
-        yield await describeMind(providers, q.mind);
+        yield await describeMind(providers, "root");
       } else {
         const stream = storage.sparql({ kind: "DESCRIBE", query: q });
 
@@ -276,6 +301,49 @@ function describe(providers, query) {
   });
 }
 
+async function merge({ fs, dir, federation }, mind, strategy) {
+  console.log(`catalog::merge start`);
+  const dirMind = await locate({ fs, dir }, mind);
+
+  // read old uuid before merge (may change after theirs)
+  const storageMind = csvs(fs, dirMind);
+  const [oldVersion] = await Array.fromAsync(
+    storageMind.sparql({ kind: "SELECT", query: { _: "." } }),
+  );
+  const oldUuid = oldVersion && (oldVersion.uuid ?? oldVersion.id);
+
+  await federation.merge(dirMind, strategy);
+
+  // read new uuid after merge
+  const [newVersion] = await Array.fromAsync(
+    csvs(fs, dirMind).sparql({ kind: "SELECT", query: { _: "." } }),
+  );
+  const newUuid = (newVersion && (newVersion.uuid ?? newVersion.id)) || oldUuid;
+
+  // rebuild this mind's entry in the root catalog
+  const dirCatalog = path.join(dir, "root");
+  const catalogStorage = csvs(fs, dirCatalog);
+  const mindEntry = await describeMind({ fs, dir, federation }, newUuid);
+
+  // if uuid changed, delete the old catalog entry
+  if (oldUuid && newUuid && oldUuid !== newUuid) {
+    await Array.fromAsync(
+      catalogStorage.sparql({
+        kind: "DELETE",
+        query: { _: "mind", mind: oldUuid },
+      }),
+    );
+  }
+
+  await Array.fromAsync(
+    catalogStorage.sparql({ kind: "UPDATE", query: mindEntry }),
+  );
+
+  await federation.settle(dirCatalog);
+
+  console.log(`catalog::merge complete`);
+}
+
 export default (providers) => {
   return {
     locate: (mind) => locate(providers, mind),
@@ -283,5 +351,6 @@ export default (providers) => {
     rebuild: () => rebuild(providers),
     induct: (record) => induct(providers, record),
     describe: (query) => describe(providers, query),
+    merge: (mind, strategy) => merge(providers, mind, strategy),
   };
 };

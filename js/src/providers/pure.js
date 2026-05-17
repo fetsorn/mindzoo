@@ -61,6 +61,13 @@ export function recordsToMind(
  * @param {object} branchRecords -
  * @returns {object[]}
  */
+// Extract base value string from a value that may be a string or an object
+// with prose (e.g. { _: "trunk", trunk: "event", "@en": "Record" } → "event")
+function baseValue(v) {
+  if (typeof v === "object" && v !== null && v._ !== undefined) return v[v._];
+  return v;
+}
+
 export function mindToRecords(branchRecords) {
   const records = branchRecords.reduce(
     (withBranch, branchRecord) => {
@@ -70,12 +77,13 @@ export function mindToRecords(branchRecords) {
 
       const schemaRecord = trunks
         .filter((t) => t !== undefined)
+        .map(baseValue)
         .reduce((withTrunk, trunk) => {
           const leaves = withBranch.schemaRecord[trunk] ?? [];
 
           const schemaRecord = {
             ...withBranch.schemaRecord,
-            [trunk]: [...new Set([branchRecord.branch, ...leaves])],
+            [trunk]: [...new Set([baseValue(branchRecord.branch), ...leaves.map(baseValue)])],
           };
 
           return schemaRecord;
