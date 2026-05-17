@@ -354,7 +354,7 @@ impl Catalog {
 
             // write uuid to csvs/.csvs.csv version record
             let new_mind_storage = Storage::new(dir_mind_new.clone());
-            let version_entry: Entry = json!({"_": ".", "uuid": mind}).try_into()?;
+            let version_entry: Entry = json!({"_": ".", "version": "0.0.4", "uuid": mind}).try_into()?;
             drain_stream_boxed(new_mind_storage.sparql(Kind::Update, vec![version_entry])).await?;
         } else if let Some(existing) = dir_mind_existing {
             if existing != dir_mind_new {

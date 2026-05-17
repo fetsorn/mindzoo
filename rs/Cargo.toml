@@ -1,6 +1,6 @@
 [package]
 name = "mindzoo"
-version = "0.1.11"
+version = "0.1.12"
 description = "Maps SPARQL named graphs to csvs datasets"
 authors = ["fetsorn"]
 license = "AGPLv3"
