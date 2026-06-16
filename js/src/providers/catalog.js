@@ -104,6 +104,60 @@ async function describeMind({ fs, dir, federation }, mind) {
   return recordsToMind(uuid, name, schemaRecord, branchRecords, url, token);
 }
 
+async function collectMindValues(fs, mindDir) {
+  const values = new Set();
+  const csvsDir = path.join(mindDir, "csvs");
+
+  let entries;
+
+  try {
+    entries = await fs.promises.readdir(csvsDir);
+  } catch (e) {
+    return values;
+  }
+
+  for (const name of entries) {
+    // only data tablets: must contain "-", end with ".csv", skip schema and version
+    if (
+      !name.endsWith(".csv") ||
+      !name.includes("-") ||
+      name === "_-_.csv" ||
+      name === ".csvs.csv"
+    ) {
+      continue;
+    }
+
+    let content;
+
+    try {
+      content = await fs.promises.readFile(path.join(csvsDir, name), "utf8");
+    } catch (e) {
+      continue;
+    }
+
+    for (const line of content.split("\n")) {
+      if (!line) continue;
+
+      // simple two-column CSV parse: split on first comma
+      const idx = line.indexOf(",");
+
+      if (idx === -1) continue;
+
+      const key = line.slice(0, idx).replace(/^"|"$/g, "");
+      const val = line.slice(idx + 1).replace(/^"|"$/g, "");
+
+      if (key) values.add(key);
+      if (val) values.add(val);
+    }
+  }
+
+  console.log(
+    `catalog::collectMindValues ${mindDir} => ${values.size} distinct values`,
+  );
+
+  return values;
+}
+
 async function rebuild({ fs, dir, federation }) {
   await retire({ fs, dir }, "root");
 
@@ -124,6 +178,9 @@ async function rebuild({ fs, dir, federation }) {
   }
 
   const minds = await fs.promises.readdir(dir);
+
+  // collect value sets for overlap computation
+  const valueSets = [];
 
   for (const mindPath of minds) {
     // skip the root catalog itself
@@ -154,12 +211,67 @@ async function rebuild({ fs, dir, federation }) {
       continue;
     }
 
+    // collect all distinct values from data tablets
+    const values = await collectMindValues(fs, dirMind);
+    const entityCount = values.size;
+
     const mind = await describeMind({ fs, dir, federation }, uuid);
 
-    // write to catalog
+    // write mind entry to catalog
     await Array.fromAsync(
       storageCatalog.sparql({ kind: "UPDATE", query: mind }),
     );
+
+    // write entity_count for this mind
+    await Array.fromAsync(
+      storageCatalog.sparql({
+        kind: "UPDATE",
+        query: {
+          _: "mind",
+          mind: uuid,
+          entity_count: String(entityCount),
+        },
+      }),
+    );
+
+    valueSets.push({ uuid, values });
+  }
+
+  // compute pairwise overlaps (deduped: mind_a < mind_b lexicographically)
+  for (let i = 0; i < valueSets.length; i++) {
+    for (let j = i + 1; j < valueSets.length; j++) {
+      let cardinality = 0;
+
+      for (const v of valueSets[i].values) {
+        if (valueSets[j].values.has(v)) cardinality++;
+      }
+
+      if (cardinality === 0) continue;
+
+      const [mindA, mindB] =
+        valueSets[i].uuid <= valueSets[j].uuid
+          ? [valueSets[i].uuid, valueSets[j].uuid]
+          : [valueSets[j].uuid, valueSets[i].uuid];
+
+      const overlapId = `${mindA}-${mindB}`;
+
+      console.log(
+        `catalog::rebuild overlap ${mindA} ∩ ${mindB} = ${cardinality}`,
+      );
+
+      await Array.fromAsync(
+        storageCatalog.sparql({
+          kind: "UPDATE",
+          query: {
+            _: "overlap",
+            overlap: overlapId,
+            mind_a: mindA,
+            mind_b: mindB,
+            cardinality: String(cardinality),
+          },
+        }),
+      );
+    }
   }
 
   // init & commit catalog

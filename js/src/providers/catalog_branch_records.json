@@ -73,5 +73,35 @@
         "branch": "sync_tag_search",
         "@en": "Search query",
         "@ru": "Поисковый запрос"
+    },
+    {
+        "_": "branch",
+        "branch": "entity_count",
+        "@en": "Number of distinct values",
+        "@ru": "Количество уникальных значений"
+    },
+    {
+        "_": "branch",
+        "branch": "overlap",
+        "@en": "Pairwise dataset overlap",
+        "@ru": "Попарное пересечение датасетов"
+    },
+    {
+        "_": "branch",
+        "branch": "mind_a",
+        "@en": "First mind in overlap pair",
+        "@ru": "Первый проект в паре"
+    },
+    {
+        "_": "branch",
+        "branch": "mind_b",
+        "@en": "Second mind in overlap pair",
+        "@ru": "Второй проект в паре"
+    },
+    {
+        "_": "branch",
+        "branch": "cardinality",
+        "@en": "Number of shared values",
+        "@ru": "Количество общих значений"
     }
 ]
