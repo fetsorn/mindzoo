@@ -315,15 +315,13 @@ impl Catalog {
                     continue;
                 }
             };
-            drain_stream_boxed(catalog_storage.sparql(Kind::Update, vec![mind_entry])).await?;
 
-            // write entity_count for this mind
-            let count_entry: Entry = json!({
-                "_": "mind",
-                "mind": uuid,
-                "entity_count": entity_count.to_string()
-            }).try_into()?;
-            drain_stream_boxed(catalog_storage.sparql(Kind::Update, vec![count_entry])).await?;
+            // fold entity_count into the mind entry before writing
+            let mut mind_value = mind_entry.into_value();
+            mind_value["entity_count"] = Value::String(entity_count.to_string());
+            let mind_entry: Entry = mind_value.try_into()?;
+
+            drain_stream_boxed(catalog_storage.sparql(Kind::Update, vec![mind_entry])).await?;
 
             value_sets.push((uuid.to_string(), values));
         }
@@ -817,7 +815,7 @@ mod tests {
 
         write_branches(&dir).await?;
 
-        let prose_dir = dir.join("csvs").join("prose");
+        let prose_dir = dir.join("csvs").join("@");
         assert!(prose_dir.exists(), "prose dir should exist");
 
         let files: Vec<String> = std::fs::read_dir(&prose_dir)
@@ -957,7 +955,7 @@ mod tests {
         dataset.update_record(vec![mind_record]).await?;
 
         // check nested prose was written
-        let prose_dir = csvs_dir.join("prose");
+        let prose_dir = csvs_dir.join("@");
         assert!(prose_dir.exists(), "prose dir should exist");
 
         let files: Vec<String> = std::fs::read_dir(&prose_dir)
