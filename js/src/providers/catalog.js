@@ -217,21 +217,12 @@ async function rebuild({ fs, dir, federation }) {
 
     const mind = await describeMind({ fs, dir, federation }, uuid);
 
+    // fold entity_count into the mind entry before writing
+    mind.entity_count = String(entityCount);
+
     // write mind entry to catalog
     await Array.fromAsync(
       storageCatalog.sparql({ kind: "UPDATE", query: mind }),
-    );
-
-    // write entity_count for this mind
-    await Array.fromAsync(
-      storageCatalog.sparql({
-        kind: "UPDATE",
-        query: {
-          _: "mind",
-          mind: uuid,
-          entity_count: String(entityCount),
-        },
-      }),
     );
 
     valueSets.push({ uuid, values });

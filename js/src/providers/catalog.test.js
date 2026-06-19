@@ -70,7 +70,7 @@ describe("prose roundtrip through mindToRecords and updateRecord", () => {
 
     // check prose was written
     const csvsdir = path.join(dir, "csvs");
-    const proseDir = path.join(csvsdir, "prose");
+    const proseDir = path.join(csvsdir, "@");
 
     expect(nodefs.existsSync(proseDir)).toBe(true);
 
@@ -203,7 +203,7 @@ describe("prose roundtrip through mindToRecords and updateRecord", () => {
     // check nested prose was written
     const csvsdir = path.join(dir, "csvs");
     console.log("csvs dir:", nodefs.readdirSync(csvsdir));
-    const proseDir = path.join(csvsdir, "prose");
+    const proseDir = path.join(csvsdir, "@");
     const proseFiles = nodefs.existsSync(proseDir)
       ? nodefs.readdirSync(proseDir)
       : [];
