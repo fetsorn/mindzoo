@@ -354,13 +354,63 @@ async function settle(fs, http, dir, origin) {
   // init
   await gitinit(fs, dir);
 
-  // commit
-  await commit(fs, dir);
-
   // set remote and token in .git/config
   if (origin !== undefined && origin.url !== undefined) {
     await setOrigin(fs, dir, origin);
   }
+
+  // first contact with remote: fetch + reset to remote content
+  // before committing local changes, so we build on top of
+  // remote history instead of creating divergent commits
+  let firstFetch = false;
+
+  try {
+    await git.resolveRef({
+      fs,
+      dir,
+      ref: "refs/remotes/origin/main",
+    });
+  } catch {
+    firstFetch = true;
+  }
+
+  if (firstFetch) {
+    const remote = await getOrigin(fs, dir);
+
+    if (remote.url) {
+      const reachable = await canReach(remote.url, remote.token);
+
+      if (reachable) {
+        const tokenPartial = remote.token
+          ? {
+              onAuth: () => ({
+                headers: {
+                  Authorization: `token ${remote.token}`,
+                },
+              }),
+            }
+          : {};
+
+        try {
+          await git.fetch({
+            fs,
+            http,
+            dir,
+            url: remote.url,
+            ref: "HEAD",
+            ...tokenPartial,
+          });
+
+          await merge(fs, dir, MergeStrategy.THEIRS);
+        } catch (e) {
+          console.log("settle first-fetch error:", e);
+        }
+      }
+    }
+  }
+
+  // commit
+  await commit(fs, dir);
 
   try {
     // fetch

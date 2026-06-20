@@ -47,6 +47,8 @@ async function locate({ fs, dir }, mind) {
 async function retire({ fs, dir }, mind) {
   const dirMind = await locate({ fs, dir }, mind);
 
+  if (!dirMind) return;
+
   try {
     await fs.promises.rm(dirMind, { recursive: true });
   } catch (e) {
@@ -179,9 +181,6 @@ async function rebuild({ fs, dir, federation }) {
 
   const minds = await fs.promises.readdir(dir);
 
-  // collect value sets for overlap computation
-  const valueSets = [];
-
   for (const mindPath of minds) {
     // skip the root catalog itself
     if (mindPath === "root") continue;
@@ -211,24 +210,60 @@ async function rebuild({ fs, dir, federation }) {
       continue;
     }
 
-    // collect all distinct values from data tablets
-    const values = await collectMindValues(fs, dirMind);
-    const entityCount = values.size;
-
     const mind = await describeMind({ fs, dir, federation }, uuid);
-
-    // fold entity_count into the mind entry before writing
-    mind.entity_count = String(entityCount);
 
     // write mind entry to catalog
     await Array.fromAsync(
       storageCatalog.sparql({ kind: "UPDATE", query: mind }),
     );
+  }
+
+  // init & commit catalog
+  await federation.settle(dirCatalog);
+}
+
+async function computeStats({ fs, dir, federation }) {
+  const dirCatalog = path.join(dir, "root");
+  const storageCatalog = csvs(fs, dirCatalog);
+
+  const minds = await fs.promises.readdir(dir);
+  const valueSets = [];
+
+  for (const mindPath of minds) {
+    if (mindPath === "root") continue;
+
+    const dirMind = path.join(dir, mindPath);
+    const storageMind = csvs(fs, dirMind);
+
+    let versionRecord;
+
+    try {
+      [versionRecord] = await Array.fromAsync(
+        storageMind.sparql({ kind: "SELECT", query: { _: "." } }),
+      );
+    } catch {
+      continue;
+    }
+
+    const uuid = versionRecord && (versionRecord.uuid ?? versionRecord.id);
+
+    if (!uuid) continue;
+
+    const values = await collectMindValues(fs, dirMind);
+    const entityCount = values.size;
+
+    // update entity_count on the existing catalog entry
+    await Array.fromAsync(
+      storageCatalog.sparql({
+        kind: "UPDATE",
+        query: { _: "mind", mind: uuid, entity_count: String(entityCount) },
+      }),
+    );
 
     valueSets.push({ uuid, values });
   }
 
-  // compute pairwise overlaps (deduped: mind_a < mind_b lexicographically)
+  // compute pairwise overlaps
   for (let i = 0; i < valueSets.length; i++) {
     for (let j = i + 1; j < valueSets.length; j++) {
       let cardinality = 0;
@@ -247,7 +282,7 @@ async function rebuild({ fs, dir, federation }) {
       const overlapId = `${mindA}-${mindB}`;
 
       console.log(
-        `catalog::rebuild overlap ${mindA} ∩ ${mindB} = ${cardinality}`,
+        `catalog::computeStats overlap ${mindA} ∩ ${mindB} = ${cardinality}`,
       );
 
       await Array.fromAsync(
@@ -265,7 +300,6 @@ async function rebuild({ fs, dir, federation }) {
     }
   }
 
-  // init & commit catalog
   await federation.settle(dirCatalog);
 }
 
@@ -359,10 +393,26 @@ async function induct({ fs, dir, federation }, record) {
   // gitinit add commit set remote & token
   await federation.settle(dirMindNew, origin);
 
+  // re-read uuid — may have changed after fetching from remote
+  let actualUuid = mind;
+
+  try {
+    const storageAfter = csvs(fs, dirMindNew);
+    const [versionAfter] = await Array.fromAsync(
+      storageAfter.sparql({ kind: "SELECT", query: { _: "." } }),
+    );
+
+    if (versionAfter) {
+      actualUuid = versionAfter.uuid ?? versionAfter.id ?? mind;
+    }
+  } catch {
+    // keep original uuid
+  }
+
   // write mind entry to root catalog so SELECT finds it immediately
   const dirCatalog = path.join(dir, "root");
   const catalogStorage = csvs(fs, dirCatalog);
-  const mindEntry = await describeMind({ fs, dir, federation }, mind);
+  const mindEntry = await describeMind({ fs, dir, federation }, actualUuid);
 
   await Array.fromAsync(
     catalogStorage.sparql({ kind: "UPDATE", query: mindEntry }),
@@ -455,6 +505,7 @@ export default (providers) => {
     locate: (mind) => locate(providers, mind),
     retire: (mind) => retire(providers, mind),
     rebuild: () => rebuild(providers),
+    computeStats: () => computeStats(providers),
     induct: (record) => induct(providers, record),
     describe: (query) => describe(providers, query),
     merge: (mind, strategy) => merge(providers, mind, strategy),
