@@ -56,6 +56,11 @@ impl Mindzoo {
         self.catalog.merge(mind, strategy, &self.federation).await
     }
 
+    /// Compute entity counts and pairwise overlaps on demand.
+    pub async fn compute_stats(&self) -> Result<()> {
+        self.catalog.compute_stats(&self.federation).await
+    }
+
     /// Single entry point. Returns a stream of Entry values.
     ///
     /// - SELECT: stream of matching records

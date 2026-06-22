@@ -31,6 +31,44 @@ impl Federation {
         .map_err(|e| crate::Error::from_message(format!("spawn_blocking: {e}")))?
     }
 
+    /// Fetch from the configured origin remote.
+    /// No-op if no origin is set.
+    pub async fn fetch(&self, dir: &Path) -> Result<()> {
+        let dir = dir.to_path_buf();
+
+        tokio::task::spawn_blocking(move || {
+            log::info!("federation::fetch({})", dir.display());
+            let repo = Repository::open(&dir)?;
+
+            if let Some(origin) = repo.get_origin() {
+                let _ = repo.fetch(&origin);
+            }
+
+            Ok(())
+        })
+        .await
+        .map_err(|e| crate::Error::from_message(format!("spawn_blocking: {e}")))?
+    }
+
+    /// Push to the configured origin remote.
+    /// No-op if no origin is set.
+    pub async fn push(&self, dir: &Path) -> Result<()> {
+        let dir = dir.to_path_buf();
+
+        tokio::task::spawn_blocking(move || {
+            log::info!("federation::push({})", dir.display());
+            let repo = Repository::open(&dir)?;
+
+            if let Some(origin) = repo.get_origin() {
+                let _ = repo.push(&origin);
+            }
+
+            Ok(())
+        })
+        .await
+        .map_err(|e| crate::Error::from_message(format!("spawn_blocking: {e}")))?
+    }
+
     /// Full lifecycle: ensure git repo, commit changes, set remote, resolve (fetch+merge+push).
     ///
     /// If origin is provided and dir doesn't exist, clone.

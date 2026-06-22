@@ -260,9 +260,8 @@ impl Catalog {
             drain_stream_boxed(catalog_storage.sparql(Kind::Update, vec![entry])).await?;
         }
 
-        // scan all mind directories, collecting value sets for overlap computation
+        // scan all mind directories
         let mut entries = fs::read_dir(&self.dir).await?;
-        let mut value_sets: Vec<(String, HashSet<String>)> = Vec::new();
 
         while let Some(dir_entry) = entries.next_entry().await? {
             let mind_path = dir_entry.file_name();
@@ -304,10 +303,6 @@ impl Catalog {
                 }
             };
 
-            // collect all distinct values from data tablets for overlap computation
-            let values = collect_mind_values(&mind_dir).await;
-            let entity_count = values.len();
-
             let mind_entry = match self.describe_mind(uuid, federation).await {
                 Ok(entry) => entry,
                 Err(e) => {
@@ -316,17 +311,71 @@ impl Catalog {
                 }
             };
 
-            // fold entity_count into the mind entry before writing
-            let mut mind_value = mind_entry.into_value();
-            mind_value["entity_count"] = Value::String(entity_count.to_string());
-            let mind_entry: Entry = mind_value.try_into()?;
-
             drain_stream_boxed(catalog_storage.sparql(Kind::Update, vec![mind_entry])).await?;
-
-            value_sets.push((uuid.to_string(), values));
         }
 
-        // compute pairwise overlaps (deduped: mind_a < mind_b lexicographically)
+        // settle the root catalog git repo
+        federation.settle(&dir_catalog, None).await?;
+
+        Ok(())
+    }
+
+    /// Compute entity counts and pairwise overlaps for all minds.
+    /// Expensive — only called on demand, not during rebuild.
+    pub async fn compute_stats(&self, federation: &Federation) -> Result<()> {
+        log::info!("catalog::compute_stats dir={}", self.dir.display());
+
+        let dir_catalog = self.dir.join("root");
+        let catalog_storage = Storage::new(dir_catalog.clone());
+
+        let mut entries = fs::read_dir(&self.dir).await?;
+        let mut value_sets: Vec<(String, HashSet<String>)> = Vec::new();
+
+        while let Some(dir_entry) = entries.next_entry().await? {
+            let mind_path = dir_entry.file_name();
+            let mind_path_str = mind_path.to_string_lossy().to_string();
+
+            if mind_path_str == "root" {
+                continue;
+            }
+
+            let mind_dir = dir_entry.path();
+            let mind_storage = Storage::new(mind_dir.clone());
+            let version_query: Entry = json!({"_": "."}).try_into()?;
+            let version_records = match collect_stream(
+                mind_storage.sparql(Kind::Select, vec![version_query]),
+            ).await {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+
+            let uuid = version_records.first().and_then(|v| {
+                v.leaves.get("uuid")
+                    .or_else(|| v.leaves.get("id"))
+                    .and_then(|entries| entries.first())
+                    .and_then(|e| e.base_value.as_deref())
+            });
+
+            let uuid = match uuid {
+                Some(u) => u.to_string(),
+                None => continue,
+            };
+
+            let values = collect_mind_values(&mind_dir).await;
+            let entity_count = values.len();
+
+            // update entity_count on existing catalog entry
+            let update_entry: Entry = json!({
+                "_": "mind",
+                "mind": uuid,
+                "entity_count": entity_count.to_string()
+            }).try_into()?;
+            drain_stream_boxed(catalog_storage.sparql(Kind::Update, vec![update_entry])).await?;
+
+            value_sets.push((uuid, values));
+        }
+
+        // compute pairwise overlaps
         for i in 0..value_sets.len() {
             for j in (i + 1)..value_sets.len() {
                 let cardinality = value_sets[i].1.intersection(&value_sets[j].1).count();
@@ -344,7 +393,7 @@ impl Catalog {
                 let overlap_id = format!("{mind_a}-{mind_b}");
 
                 log::info!(
-                    "catalog::rebuild overlap {} ∩ {} = {}",
+                    "catalog::compute_stats overlap {} ∩ {} = {}",
                     mind_a, mind_b, cardinality
                 );
 
@@ -359,7 +408,6 @@ impl Catalog {
             }
         }
 
-        // settle the root catalog git repo
         federation.settle(&dir_catalog, None).await?;
 
         Ok(())
@@ -478,7 +526,11 @@ impl Catalog {
                 })
         };
 
+        federation.fetch(&dir_mind).await?;
+
         federation.merge(&dir_mind, strategy).await?;
+
+        federation.push(&dir_mind).await?;
 
         // read new uuid after merge
         let new_uuid = {
