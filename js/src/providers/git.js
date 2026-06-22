@@ -297,39 +297,144 @@ async function merge(fs, dir, strategy) {
   }
 }
 
-export async function resolve(fs, http, dir) {
+async function captureDirty(fs, dir) {
+  const dirty = new Map();
+
+  let matrix;
+  try {
+    matrix = await git.statusMatrix({ fs, dir });
+  } catch {
+    // no HEAD yet (fresh repo) — treat every file as dirty
+    return dirty;
+  }
+
+  for (const [filepath, H, W] of matrix) {
+    if (H === W) continue; // unchanged between HEAD and working dir
+
+    if (W === 0) {
+      // deleted in working dir
+      dirty.set(filepath, null);
+    } else {
+      // added or modified — read content
+      const content = await fs.promises.readFile(`${dir}/${filepath}`);
+      dirty.set(filepath, content);
+    }
+  }
+
+  return dirty;
+}
+
+async function reapplyDirty(fs, dir, dirty) {
+  for (const [filepath, content] of dirty) {
+    const fullPath = `${dir}/${filepath}`;
+
+    if (content === null) {
+      try {
+        await fs.promises.unlink(fullPath);
+      } catch {
+        /* already gone */
+      }
+    } else {
+      // ensure parent directory exists
+      const parent = fullPath.substring(0, fullPath.lastIndexOf("/"));
+      await fs.promises.mkdir(parent, { recursive: true }).catch(() => {});
+      await fs.promises.writeFile(fullPath, content);
+    }
+  }
+}
+
+async function settle(fs, http, dir, origin) {
+  // 0. ensure repo exists
+  await gitinit(fs, dir);
+
+  // 1. set remote if provided (induct passes origin)
+  if (origin !== undefined && origin.url !== undefined) {
+    await setOrigin(fs, dir, origin);
+  }
+
   const remote = await getOrigin(fs, dir);
 
+  // 2. no remote configured → local-only repo, just commit
+  if (!remote.url) {
+    await commit(fs, dir);
+    return;
+  }
+
+  // 3. remote unreachable → leave dirty files for next settle
   const reachable = await canReach(remote.url, remote.token);
   if (!reachable) {
-    return { ok: true };
+    return;
   }
 
   const tokenPartial = remote.token
     ? {
         onAuth: () => ({
-          headers: {
-            Authorization: `token ${remote.token}`,
-          },
+          headers: { Authorization: `token ${remote.token}` },
         }),
       }
     : {};
 
-  await git.fetch({
-    fs,
-    http,
-    dir,
-    url: remote.url,
-    ref: "HEAD",
-    ...tokenPartial,
-  });
+  // 4. capture local dirty state
+  const dirty = await captureDirty(fs, dir);
 
+  // 5. fetch remote
   try {
-    await merge(fs, dir, MergeStrategy.AUTO);
+    await git.fetch({
+      fs,
+      http,
+      dir,
+      url: remote.url,
+      ...tokenPartial,
+    });
   } catch (e) {
-    console.log("merge", e);
+    // fetch failed — commit locally so work isn't lost, skip push
+    console.log("settle fetch error:", e);
 
-    return { ok: false };
+    await reapplyDirty(fs, dir, dirty);
+
+    await commit(fs, dir);
+    return;
+  }
+
+  // 6. reset to remote tip (if it exists)
+  let remoteOid;
+  try {
+    remoteOid = await git.resolveRef({
+      fs,
+      dir,
+      ref: "refs/remotes/origin/main",
+    });
+  } catch {
+    remoteOid = null; // remote repo is empty, no main branch yet
+  }
+
+  if (remoteOid) {
+    await git.writeRef({
+      fs,
+      dir,
+      ref: "refs/heads/main",
+      value: remoteOid,
+      force: true,
+    });
+    await git.checkout({ fs, dir, ref: "main", force: true });
+  }
+
+  // 7. reapply local changes on top of remote
+  await reapplyDirty(fs, dir, dirty);
+
+  // 8. commit (uses existing commit function — stages + commits if dirty)
+  await commit(fs, dir);
+
+  // 9. push if we have something remote doesn't
+  let localOid;
+  try {
+    localOid = await git.resolveRef({ fs, dir, ref: "HEAD" });
+  } catch {
+    return; // fresh repo, no commits at all
+  }
+
+  if (remoteOid && localOid === remoteOid) {
+    return; // nothing new to push
   }
 
   try {
@@ -342,83 +447,58 @@ export async function resolve(fs, http, dir) {
       ...tokenPartial,
     });
   } catch (e) {
-    console.log("push", e);
-
-    return { ok: false };
+    console.log("settle push error:", e);
   }
-
-  return { ok: true };
 }
 
-async function settle(fs, http, dir, origin) {
-  // init
-  await gitinit(fs, dir);
+async function fetchRemote(fs, http, dir) {
+  const remote = await getOrigin(fs, dir);
 
-  // set remote and token in .git/config
-  if (origin !== undefined && origin.url !== undefined) {
-    await setOrigin(fs, dir, origin);
-  }
+  if (!remote.url) return;
 
-  // first contact with remote: fetch + reset to remote content
-  // before committing local changes, so we build on top of
-  // remote history instead of creating divergent commits
-  let firstFetch = false;
+  const reachable = await canReach(remote.url, remote.token);
 
-  try {
-    await git.resolveRef({
-      fs,
-      dir,
-      ref: "refs/remotes/origin/main",
-    });
-  } catch {
-    firstFetch = true;
-  }
+  if (!reachable) return;
 
-  if (firstFetch) {
-    const remote = await getOrigin(fs, dir);
-
-    if (remote.url) {
-      const reachable = await canReach(remote.url, remote.token);
-
-      if (reachable) {
-        const tokenPartial = remote.token
-          ? {
-              onAuth: () => ({
-                headers: {
-                  Authorization: `token ${remote.token}`,
-                },
-              }),
-            }
-          : {};
-
-        try {
-          await git.fetch({
-            fs,
-            http,
-            dir,
-            url: remote.url,
-            ref: "HEAD",
-            ...tokenPartial,
-          });
-
-          await merge(fs, dir, MergeStrategy.THEIRS);
-        } catch (e) {
-          console.log("settle first-fetch error:", e);
-        }
+  const tokenPartial = remote.token
+    ? {
+        onAuth: () => ({
+          headers: { Authorization: `token ${remote.token}` },
+        }),
       }
-    }
-  }
+    : {};
 
-  // commit
-  await commit(fs, dir);
+  await git.fetch({ fs, http, dir, url: remote.url, ...tokenPartial });
+}
+
+async function pushRemote(fs, http, dir) {
+  const remote = await getOrigin(fs, dir);
+
+  if (!remote.url) return;
+
+  const reachable = await canReach(remote.url, remote.token);
+
+  if (!reachable) return;
+
+  const tokenPartial = remote.token
+    ? {
+        onAuth: () => ({
+          headers: { Authorization: `token ${remote.token}` },
+        }),
+      }
+    : {};
 
   try {
-    // fetch
-    // merge
-    // push
-    await resolve(fs, http, dir);
+    await git.push({
+      fs,
+      http,
+      dir,
+      url: remote.url,
+      remote: "origin",
+      ...tokenPartial,
+    });
   } catch (e) {
-    console.log("settle resolve error:", e);
+    console.log("push error:", e);
   }
 }
 
@@ -426,6 +506,8 @@ export default (fs, http) => {
   return {
     settle: (dir, origin) => settle(fs, http, dir, origin),
     merge: (dir, strategy) => merge(fs, dir, strategy),
+    fetch: (dir) => fetchRemote(fs, http, dir),
+    push: (dir) => pushRemote(fs, http, dir),
     getOrigin: (dir) => getOrigin(fs, dir),
   };
 };

@@ -25,6 +25,10 @@ async function DESCRIBE({ fs, dir, catalog }, mind, query) {
 async function DELETE({ fs, dir, catalog, federation }, mind, query) {
   const dirMind = await catalog.locate(mind);
 
+  if (dirMind === undefined || dirMind === null) {
+    throw new Error(`DELETE: catalog.locate("${mind}") returned ${dirMind}`);
+  }
+
   const storage = csvs(fs, dirMind);
 
   await Array.fromAsync(storage.sparql({ kind: "DELETE", query }));
@@ -74,6 +78,11 @@ async function UPDATE({ fs, dir, catalog, federation }, mind, query) {
     }
   } else {
     const dirMind = await catalog.locate(mind);
+
+    if (dirMind === undefined || dirMind === null) {
+      throw new Error(`UPDATE: catalog.locate("${mind}") returned ${dirMind}`);
+    }
+
     const storage = csvs(fs, dirMind);
 
     await Array.fromAsync(storage.sparql({ kind: "UPDATE", query }));

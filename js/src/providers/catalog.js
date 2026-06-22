@@ -463,12 +463,18 @@ async function merge({ fs, dir, federation }, mind, strategy) {
 
   // read old uuid before merge (may change after theirs)
   const storageMind = csvs(fs, dirMind);
+
   const [oldVersion] = await Array.fromAsync(
     storageMind.sparql({ kind: "SELECT", query: { _: "." } }),
   );
+
   const oldUuid = oldVersion && (oldVersion.uuid ?? oldVersion.id);
 
+  await federation.fetch(dirMind);
+
   await federation.merge(dirMind, strategy);
+
+  await federation.push(dirMind);
 
   // read new uuid after merge
   const [newVersion] = await Array.fromAsync(
