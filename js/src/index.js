@@ -117,6 +117,8 @@ async function sparql(providers, { kind, graph, query }) {
 }
 
 export default async function createMindZoo({ fs, dir, http }) {
+  console.time("mindzoo::init");
+
   const federation = git(fs, http);
 
   const catalog = io({ fs, dir, federation });
@@ -124,6 +126,8 @@ export default async function createMindZoo({ fs, dir, http }) {
   await catalog.rebuild();
 
   const providers = { fs, dir, catalog, federation };
+
+  console.timeEnd("mindzoo::init");
 
   return {
     ...providers,

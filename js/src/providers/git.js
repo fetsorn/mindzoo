@@ -300,11 +300,21 @@ async function merge(fs, dir, strategy) {
 async function captureDirty(fs, dir) {
   const dirty = new Map();
 
+  // fresh repo with no commits — nothing committed worth preserving.
+  // statusMatrix doesn't throw here (returns H=0 for all files), so we
+  // must check explicitly; otherwise we'd capture scaffolding files
+  // (e.g. the throwaway UUID that induct writes before settle clones
+  // the remote) and reapplyDirty would overwrite the remote content.
+  try {
+    await git.resolveRef({ fs, dir, ref: "HEAD" });
+  } catch {
+    return dirty;
+  }
+
   let matrix;
   try {
     matrix = await git.statusMatrix({ fs, dir });
   } catch {
-    // no HEAD yet (fresh repo) — treat every file as dirty
     return dirty;
   }
 
@@ -344,11 +354,16 @@ async function reapplyDirty(fs, dir, dirty) {
 }
 
 async function settle(fs, http, dir, origin) {
+  const tag = `git::settle ${dir.split("/").pop()}`;
+  console.time(tag);
+
   // 0. ensure repo exists
+  console.log(`${tag} gitinit`);
   await gitinit(fs, dir);
 
   // 1. set remote if provided (induct passes origin)
   if (origin !== undefined && origin.url !== undefined) {
+    console.log(`${tag} setOrigin ${origin.url}`);
     await setOrigin(fs, dir, origin);
   }
 
@@ -356,13 +371,18 @@ async function settle(fs, http, dir, origin) {
 
   // 2. no remote configured → local-only repo, just commit
   if (!remote.url) {
+    console.log(`${tag} local-only, commit`);
     await commit(fs, dir);
+    console.timeEnd(tag);
     return;
   }
 
   // 3. remote unreachable → leave dirty files for next settle
+  console.log(`${tag} canReach?`);
   const reachable = await canReach(remote.url, remote.token);
   if (!reachable) {
+    console.log(`${tag} unreachable, skip`);
+    console.timeEnd(tag);
     return;
   }
 
@@ -375,10 +395,14 @@ async function settle(fs, http, dir, origin) {
     : {};
 
   // 4. capture local dirty state
+  console.log(`${tag} captureDirty`);
   const dirty = await captureDirty(fs, dir);
+  console.log(`${tag} ${dirty.size} dirty files`);
 
   // 5. fetch remote
   try {
+    console.log(`${tag} fetch`);
+    console.time(`${tag} fetch`);
     await git.fetch({
       fs,
       http,
@@ -386,13 +410,15 @@ async function settle(fs, http, dir, origin) {
       url: remote.url,
       ...tokenPartial,
     });
+    console.timeEnd(`${tag} fetch`);
   } catch (e) {
     // fetch failed — commit locally so work isn't lost, skip push
-    console.log("settle fetch error:", e);
+    console.log(`${tag} fetch error:`, e);
 
     await reapplyDirty(fs, dir, dirty);
 
     await commit(fs, dir);
+    console.timeEnd(tag);
     return;
   }
 
@@ -409,6 +435,7 @@ async function settle(fs, http, dir, origin) {
   }
 
   if (remoteOid) {
+    console.log(`${tag} checkout ${remoteOid.slice(0, 7)}`);
     await git.writeRef({
       fs,
       dir,
@@ -420,9 +447,13 @@ async function settle(fs, http, dir, origin) {
   }
 
   // 7. reapply local changes on top of remote
+  if (dirty.size > 0) {
+    console.log(`${tag} reapplyDirty`);
+  }
   await reapplyDirty(fs, dir, dirty);
 
   // 8. commit (uses existing commit function — stages + commits if dirty)
+  console.log(`${tag} commit`);
   await commit(fs, dir);
 
   // 9. push if we have something remote doesn't
@@ -430,14 +461,19 @@ async function settle(fs, http, dir, origin) {
   try {
     localOid = await git.resolveRef({ fs, dir, ref: "HEAD" });
   } catch {
+    console.timeEnd(tag);
     return; // fresh repo, no commits at all
   }
 
   if (remoteOid && localOid === remoteOid) {
+    console.log(`${tag} nothing to push`);
+    console.timeEnd(tag);
     return; // nothing new to push
   }
 
   try {
+    console.log(`${tag} push`);
+    console.time(`${tag} push`);
     await git.push({
       fs,
       http,
@@ -446,19 +482,25 @@ async function settle(fs, http, dir, origin) {
       remote: "origin",
       ...tokenPartial,
     });
+    console.timeEnd(`${tag} push`);
   } catch (e) {
-    console.log("settle push error:", e);
+    console.log(`${tag} push error:`, e);
   }
+  console.timeEnd(tag);
 }
 
 async function fetchRemote(fs, http, dir) {
+  const tag = `git::fetch ${dir.split("/").pop()}`;
   const remote = await getOrigin(fs, dir);
 
   if (!remote.url) return;
 
   const reachable = await canReach(remote.url, remote.token);
 
-  if (!reachable) return;
+  if (!reachable) {
+    console.log(`${tag} unreachable`);
+    return;
+  }
 
   const tokenPartial = remote.token
     ? {
@@ -468,17 +510,23 @@ async function fetchRemote(fs, http, dir) {
       }
     : {};
 
+  console.time(tag);
   await git.fetch({ fs, http, dir, url: remote.url, ...tokenPartial });
+  console.timeEnd(tag);
 }
 
 async function pushRemote(fs, http, dir) {
+  const tag = `git::push ${dir.split("/").pop()}`;
   const remote = await getOrigin(fs, dir);
 
   if (!remote.url) return;
 
   const reachable = await canReach(remote.url, remote.token);
 
-  if (!reachable) return;
+  if (!reachable) {
+    console.log(`${tag} unreachable`);
+    return;
+  }
 
   const tokenPartial = remote.token
     ? {
@@ -489,6 +537,7 @@ async function pushRemote(fs, http, dir) {
     : {};
 
   try {
+    console.time(tag);
     await git.push({
       fs,
       http,
@@ -497,8 +546,9 @@ async function pushRemote(fs, http, dir) {
       remote: "origin",
       ...tokenPartial,
     });
+    console.timeEnd(tag);
   } catch (e) {
-    console.log("push error:", e);
+    console.log(`${tag} error:`, e);
   }
 }
 

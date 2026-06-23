@@ -56,22 +56,26 @@ async function retire({ fs, dir }, mind) {
   }
 }
 
-async function describeMind({ fs, dir, federation }, mind) {
-  const dirMind = await locate({ fs, dir }, mind);
+async function describeMind({ fs, dir, federation }, mind, knownDir) {
+  const dirMind = knownDir ?? await locate({ fs, dir }, mind);
 
   const name = path.basename(dirMind);
 
   const storageMind = csvs(fs, dirMind);
 
-  // read uuid from csvs/.csvs.csv version record
-  const [versionRecord] = await Array.fromAsync(
-    storageMind.sparql({ kind: "SELECT", query: { _: "." } }),
-  );
+  // when knownDir is provided, caller already verified the uuid
+  let uuid = mind;
 
-  const uuid =
-    versionRecord && (versionRecord.uuid ?? versionRecord.id)
-      ? (versionRecord.uuid ?? versionRecord.id)
-      : mind;
+  if (!knownDir) {
+    const [versionRecord] = await Array.fromAsync(
+      storageMind.sparql({ kind: "SELECT", query: { _: "." } }),
+    );
+
+    uuid =
+      versionRecord && (versionRecord.uuid ?? versionRecord.id)
+        ? (versionRecord.uuid ?? versionRecord.id)
+        : mind;
+  }
 
   const [schemaRecord] = await Array.fromAsync(
     storageMind.sparql({
@@ -161,6 +165,9 @@ async function collectMindValues(fs, mindDir) {
 }
 
 async function rebuild({ fs, dir, federation }) {
+  console.time("catalog::rebuild");
+  console.log("catalog::rebuild start");
+
   await retire({ fs, dir }, "root");
 
   const dirCatalog = path.join(dir, "root");
@@ -169,17 +176,11 @@ async function rebuild({ fs, dir, federation }) {
 
   const storageCatalog = csvs(fs, dirCatalog);
 
-  await Array.fromAsync(
-    storageCatalog.sparql({ kind: "UPDATE", query: catalogSchemaRecord }),
-  );
-
-  for (const branchRecord of catalogBranchRecords) {
-    await Array.fromAsync(
-      storageCatalog.sparql({ kind: "UPDATE", query: branchRecord }),
-    );
-  }
+  console.log("catalog::rebuild write schema + branches");
+  await storageCatalog.updateBatch([catalogSchemaRecord, ...catalogBranchRecords]);
 
   const minds = await fs.promises.readdir(dir);
+  console.log(`catalog::rebuild found ${minds.length - 1} mind dirs`);
 
   for (const mindPath of minds) {
     // skip the root catalog itself
@@ -210,7 +211,8 @@ async function rebuild({ fs, dir, federation }) {
       continue;
     }
 
-    const mind = await describeMind({ fs, dir, federation }, uuid);
+    console.log(`catalog::rebuild describe ${mindPath}`);
+    const mind = await describeMind({ fs, dir, federation }, uuid, dirMind);
 
     // write mind entry to catalog
     await Array.fromAsync(
@@ -219,7 +221,9 @@ async function rebuild({ fs, dir, federation }) {
   }
 
   // init & commit catalog
+  console.log("catalog::rebuild settle");
   await federation.settle(dirCatalog);
+  console.timeEnd("catalog::rebuild");
 }
 
 async function computeStats({ fs, dir, federation }) {
@@ -304,6 +308,8 @@ async function computeStats({ fs, dir, federation }) {
 }
 
 async function induct({ fs, dir, federation }, record) {
+  console.time("catalog::induct");
+  console.log("catalog::induct start");
   const mind = record.mind;
 
   // if no name, use uuid as name
@@ -391,6 +397,7 @@ async function induct({ fs, dir, federation }, record) {
       : undefined;
 
   // gitinit add commit set remote & token
+  console.log("catalog::induct settle mind");
   await federation.settle(dirMindNew, origin);
 
   // re-read uuid — may have changed after fetching from remote
@@ -410,6 +417,7 @@ async function induct({ fs, dir, federation }, record) {
   }
 
   // write mind entry to root catalog so SELECT finds it immediately
+  console.log("catalog::induct update catalog");
   const dirCatalog = path.join(dir, "root");
   const catalogStorage = csvs(fs, dirCatalog);
   const mindEntry = await describeMind({ fs, dir, federation }, actualUuid);
@@ -418,7 +426,9 @@ async function induct({ fs, dir, federation }, record) {
     catalogStorage.sparql({ kind: "UPDATE", query: mindEntry }),
   );
 
+  console.log("catalog::induct settle catalog");
   await federation.settle(dirCatalog);
+  console.timeEnd("catalog::induct");
 }
 
 function describe(providers, query) {
@@ -458,7 +468,8 @@ function describe(providers, query) {
 }
 
 async function merge({ fs, dir, federation }, mind, strategy) {
-  console.log(`catalog::merge start`);
+  console.time("catalog::merge");
+  console.log(`catalog::merge start (${strategy})`);
   const dirMind = await locate({ fs, dir }, mind);
 
   // read old uuid before merge (may change after theirs)
@@ -470,10 +481,13 @@ async function merge({ fs, dir, federation }, mind, strategy) {
 
   const oldUuid = oldVersion && (oldVersion.uuid ?? oldVersion.id);
 
+  console.log("catalog::merge fetch");
   await federation.fetch(dirMind);
 
+  console.log("catalog::merge merge");
   await federation.merge(dirMind, strategy);
 
+  console.log("catalog::merge push");
   await federation.push(dirMind);
 
   // read new uuid after merge
@@ -483,6 +497,7 @@ async function merge({ fs, dir, federation }, mind, strategy) {
   const newUuid = (newVersion && (newVersion.uuid ?? newVersion.id)) || oldUuid;
 
   // rebuild this mind's entry in the root catalog
+  console.log("catalog::merge update catalog");
   const dirCatalog = path.join(dir, "root");
   const catalogStorage = csvs(fs, dirCatalog);
   const mindEntry = await describeMind({ fs, dir, federation }, newUuid);
@@ -501,9 +516,10 @@ async function merge({ fs, dir, federation }, mind, strategy) {
     catalogStorage.sparql({ kind: "UPDATE", query: mindEntry }),
   );
 
+  console.log("catalog::merge settle catalog");
   await federation.settle(dirCatalog);
 
-  console.log(`catalog::merge complete`);
+  console.timeEnd("catalog::merge");
 }
 
 export default (providers) => {

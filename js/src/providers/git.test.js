@@ -355,7 +355,36 @@ describe("settle", () => {
   });
 
   // -----------------------------------------------------------------------
-  // 7. Multiple settles with remote advancing each time → never merge commits
+  // 7. Clone scenario: local scaffolding must not overwrite remote content
+  //    Reproduces the bug where induct writes a throwaway UUID, then settle
+  //    captures it via captureDirty and reapplyDirty writes it back on top
+  //    of the remote UUID after checkout --force.
+  // -----------------------------------------------------------------------
+  test("clone: local files written before first settle do not overwrite remote", async () => {
+    const repoName = "test-clone-uuid";
+    const bareDir = createBareRepo(serverRootDir, repoName);
+    const remoteUrl = `http://127.0.0.1:${serverPort}/${repoName}`;
+
+    // Seed remote with a file representing the "real" UUID
+    const seedDir = seedRemote(bareDir);
+    advanceRemote(bareDir, "uuid.txt", "remote-uuid\n");
+
+    // Simulate what induct does: create dir, write scaffolding with a
+    // throwaway UUID, then call settle with origin (first contact)
+    nodefs.writeFileSync(path.join(localDir, "uuid.txt"), "throwaway-uuid\n");
+
+    await provider.settle(localDir, { url: remoteUrl });
+
+    // Remote UUID must prevail — the throwaway must not survive
+    const content = nodefs.readFileSync(
+      path.join(localDir, "uuid.txt"),
+      "utf8",
+    );
+    expect(content).toBe("remote-uuid\n");
+  });
+
+  // -----------------------------------------------------------------------
+  // 8. Multiple settles with remote advancing each time → never merge commits
   //    This catches the bug where the "first fetch" guard only helps once.
   // -----------------------------------------------------------------------
   test("three settles with remote advancing: history stays linear", async () => {

@@ -48,6 +48,14 @@ function UPDATE(fs, dir, query) {
   });
 }
 
+async function updateBatch(fs, dir, queries) {
+  await csvs.init({ fs, dir });
+
+  for (const query of queries) {
+    await csvs.updateRecord({ fs, dir, query });
+  }
+}
+
 function sparql(providers, dir, { kind, graph, query }) {
   // TODO accept sparql string and infer kind with haydee
   // const { kind, graph, inner } = await haydee.classify(sparql);
@@ -71,4 +79,5 @@ function sparql(providers, dir, { kind, graph, query }) {
 
 export default (fs, dir) => ({
   sparql: (query) => sparql(fs, dir, query),
+  updateBatch: (queries) => updateBatch(fs, dir, queries),
 });
