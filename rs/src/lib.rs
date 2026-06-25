@@ -56,11 +56,6 @@ impl Mindzoo {
         self.catalog.merge(mind, strategy, &self.federation).await
     }
 
-    /// Compute entity counts and pairwise overlaps on demand.
-    pub async fn compute_stats(&self) -> Result<()> {
-        self.catalog.compute_stats(&self.federation).await
-    }
-
     /// Single entry point. Returns a stream of Entry values.
     ///
     /// - SELECT: stream of matching records
@@ -91,6 +86,13 @@ impl Mindzoo {
             }
 
             Kind::Select | Kind::Describe => Ok(storage.sparql(kind, query)),
+
+            Kind::Insert => {
+                let stream = storage.sparql(kind, query);
+                catalog::drain_stream_boxed(stream).await?;
+                self.federation.settle(&dir_mind, None).await?;
+                Ok(Box::pin(futures_util::stream::empty()))
+            }
 
             Kind::Update => {
                 if graph == "root" {

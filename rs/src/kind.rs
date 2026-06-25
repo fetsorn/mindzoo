@@ -7,6 +7,7 @@ use std::str::FromStr;
 pub enum Kind {
     Select,
     Describe,
+    Insert,
     Update,
     Delete,
 }
@@ -18,6 +19,7 @@ impl FromStr for Kind {
         match s.to_uppercase().as_str() {
             "SELECT" => Ok(Kind::Select),
             "DESCRIBE" => Ok(Kind::Describe),
+            "INSERT" => Ok(Kind::Insert),
             "UPDATE" => Ok(Kind::Update),
             "DELETE" => Ok(Kind::Delete),
             other => Err(Error::from_message(format!("unknown sparql kind: {other}"))),

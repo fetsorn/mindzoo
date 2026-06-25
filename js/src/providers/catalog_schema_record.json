@@ -1,7 +1,6 @@
 {
     "_": "_",
-    "mind": ["name", "category", "branch", "origin_url", "entity_count"],
+    "mind": ["name", "category", "branch", "origin_url"],
     "branch": ["trunk", "task", "cognate"],
-    "origin_url": ["origin_token"],
-    "overlap": ["mind_a", "mind_b", "cardinality"]
+    "origin_url": ["origin_token"]
 }

@@ -33,6 +33,7 @@ impl Storage {
         match kind {
             Kind::Select => Box::pin(select(dir, query)),
             Kind::Describe => Box::pin(describe(dir, query)),
+            Kind::Insert => Box::pin(insert(dir, query)),
             Kind::Update => Box::pin(update(dir, query)),
             Kind::Delete => Box::pin(delete(dir, query)),
         }
@@ -78,6 +79,26 @@ async fn open_or_create(dir: &PathBuf) -> crate::Result<Dataset> {
     match Dataset::open(dir).await {
         Ok(ds) => Ok(ds),
         Err(_) => Dataset::create(dir, false).await.map_err(crate::Error::from),
+    }
+}
+
+fn insert(dir: PathBuf, query: Vec<Entry>) -> impl Stream<Item = Result<Entry>> {
+    async_stream::stream! {
+        log::info!("storage::insert polled dir={}", dir.display());
+        let result: Result<()> = async {
+            let dataset = open_or_create(&dir).await?;
+            dataset.insert_record(query).await.map_err(crate::Error::from)?;
+            Ok(())
+        }.await;
+
+        match &result {
+            Ok(()) => log::info!("storage::insert ok"),
+            Err(e) => log::error!("storage::insert error: {e}"),
+        }
+
+        if let Err(e) = result {
+            yield Err(e);
+        }
     }
 }
 

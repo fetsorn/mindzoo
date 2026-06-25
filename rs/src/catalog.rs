@@ -4,7 +4,6 @@ use crate::{Kind, Result, Error};
 use csvs::{Entry, IntoValue};
 use futures_util::StreamExt;
 use serde_json::{json, Value};
-use std::collections::HashSet;
 use std::path::PathBuf;
 use tokio::fs;
 
@@ -13,10 +12,9 @@ use tokio::fs;
 fn catalog_schema_value() -> Value {
     json!({
         "_": "_",
-        "mind": ["name", "category", "branch", "origin_url", "entity_count"],
+        "mind": ["name", "category", "branch", "origin_url"],
         "branch": ["trunk", "task", "cognate"],
-        "origin_url": ["origin_token"],
-        "overlap": ["mind_a", "mind_b", "cardinality"]
+        "origin_url": ["origin_token"]
     })
 }
 
@@ -36,11 +34,6 @@ fn catalog_branch_values() -> Vec<Value> {
         json!({"_": "branch", "branch": "origin_token", "@en": "Authentication token", "@ru": "Токен для синхронизации"}),
         json!({"_": "branch", "branch": "sync_tag", "task": "sync", "@en": "Name of database to sync", "@ru": "Название базы данных для синхронизации"}),
         json!({"_": "branch", "branch": "sync_tag_search", "@en": "Search query", "@ru": "Поисковый запрос"}),
-        json!({"_": "branch", "branch": "entity_count", "@en": "Number of distinct values", "@ru": "Количество уникальных значений"}),
-        json!({"_": "branch", "branch": "overlap", "@en": "Pairwise dataset overlap", "@ru": "Попарное пересечение датасетов"}),
-        json!({"_": "branch", "branch": "mind_a", "@en": "First mind in overlap pair", "@ru": "Первый проект в паре"}),
-        json!({"_": "branch", "branch": "mind_b", "@en": "Second mind in overlap pair", "@ru": "Второй проект в паре"}),
-        json!({"_": "branch", "branch": "cardinality", "@en": "Number of shared values", "@ru": "Количество общих значений"}),
     ]
 }
 
@@ -239,10 +232,10 @@ impl Catalog {
     pub async fn rebuild(&self, federation: &Federation) -> Result<()> {
         log::info!("catalog::rebuild dir={}", self.dir.display());
 
+        let dir_catalog = self.dir.join("root");
+
         // remove existing root catalog
         self.retire("root").await?;
-
-        let dir_catalog = self.dir.join("root");
 
         fs::create_dir_all(&dir_catalog).await?;
         log::info!("catalog::rebuild created {}", dir_catalog.display());
@@ -315,99 +308,6 @@ impl Catalog {
         }
 
         // settle the root catalog git repo
-        federation.settle(&dir_catalog, None).await?;
-
-        Ok(())
-    }
-
-    /// Compute entity counts and pairwise overlaps for all minds.
-    /// Expensive — only called on demand, not during rebuild.
-    pub async fn compute_stats(&self, federation: &Federation) -> Result<()> {
-        log::info!("catalog::compute_stats dir={}", self.dir.display());
-
-        let dir_catalog = self.dir.join("root");
-        let catalog_storage = Storage::new(dir_catalog.clone());
-
-        let mut entries = fs::read_dir(&self.dir).await?;
-        let mut value_sets: Vec<(String, HashSet<String>)> = Vec::new();
-
-        while let Some(dir_entry) = entries.next_entry().await? {
-            let mind_path = dir_entry.file_name();
-            let mind_path_str = mind_path.to_string_lossy().to_string();
-
-            if mind_path_str == "root" {
-                continue;
-            }
-
-            let mind_dir = dir_entry.path();
-            let mind_storage = Storage::new(mind_dir.clone());
-            let version_query: Entry = json!({"_": "."}).try_into()?;
-            let version_records = match collect_stream(
-                mind_storage.sparql(Kind::Select, vec![version_query]),
-            ).await {
-                Ok(r) => r,
-                Err(_) => continue,
-            };
-
-            let uuid = version_records.first().and_then(|v| {
-                v.leaves.get("uuid")
-                    .or_else(|| v.leaves.get("id"))
-                    .and_then(|entries| entries.first())
-                    .and_then(|e| e.base_value.as_deref())
-            });
-
-            let uuid = match uuid {
-                Some(u) => u.to_string(),
-                None => continue,
-            };
-
-            let values = collect_mind_values(&mind_dir).await;
-            let entity_count = values.len();
-
-            // update entity_count on existing catalog entry
-            let update_entry: Entry = json!({
-                "_": "mind",
-                "mind": uuid,
-                "entity_count": entity_count.to_string()
-            }).try_into()?;
-            drain_stream_boxed(catalog_storage.sparql(Kind::Update, vec![update_entry])).await?;
-
-            value_sets.push((uuid, values));
-        }
-
-        // compute pairwise overlaps
-        for i in 0..value_sets.len() {
-            for j in (i + 1)..value_sets.len() {
-                let cardinality = value_sets[i].1.intersection(&value_sets[j].1).count();
-
-                if cardinality == 0 {
-                    continue;
-                }
-
-                let (mind_a, mind_b) = if value_sets[i].0 <= value_sets[j].0 {
-                    (&value_sets[i].0, &value_sets[j].0)
-                } else {
-                    (&value_sets[j].0, &value_sets[i].0)
-                };
-
-                let overlap_id = format!("{mind_a}-{mind_b}");
-
-                log::info!(
-                    "catalog::compute_stats overlap {} ∩ {} = {}",
-                    mind_a, mind_b, cardinality
-                );
-
-                let overlap_entry: Entry = json!({
-                    "_": "overlap",
-                    "overlap": overlap_id,
-                    "mind_a": mind_a,
-                    "mind_b": mind_b,
-                    "cardinality": cardinality.to_string()
-                }).try_into()?;
-                drain_stream_boxed(catalog_storage.sparql(Kind::Update, vec![overlap_entry])).await?;
-            }
-        }
-
         federation.settle(&dir_catalog, None).await?;
 
         Ok(())
@@ -580,64 +480,6 @@ impl Catalog {
 }
 
 // --- helpers ---
-
-/// Collect all distinct values from a mind's data tablets.
-/// Reads every `*-*.csv` file in `<mind_dir>/csvs/`, skipping `_-_.csv` and `.csvs.csv`.
-/// Both key (column 1) and value (column 2) of each line are collected.
-async fn collect_mind_values(mind_dir: &std::path::Path) -> HashSet<String> {
-    let mut values = HashSet::new();
-    let csvs_dir = mind_dir.join("csvs");
-
-    let mut entries = match fs::read_dir(&csvs_dir).await {
-        Ok(e) => e,
-        Err(_) => return values,
-    };
-
-    while let Ok(Some(entry)) = entries.next_entry().await {
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy();
-
-        // only data tablets: must contain "-", end with ".csv", skip schema and version
-        if !name_str.ends_with(".csv")
-            || !name_str.contains('-')
-            || name_str == "_-_.csv"
-            || name_str == ".csvs.csv"
-        {
-            continue;
-        }
-
-        let content = match fs::read_to_string(entry.path()).await {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-
-        for line in content.lines() {
-            if line.is_empty() {
-                continue;
-            }
-            // simple two-column CSV parse: split on first comma
-            if let Some((key, val)) = line.split_once(',') {
-                // strip surrounding quotes if present
-                let key = key.trim_matches('"');
-                let val = val.trim_matches('"');
-                if !key.is_empty() {
-                    values.insert(key.to_string());
-                }
-                if !val.is_empty() {
-                    values.insert(val.to_string());
-                }
-            }
-        }
-    }
-
-    log::info!(
-        "catalog::collect_mind_values {} => {} distinct values",
-        mind_dir.display(),
-        values.len()
-    );
-
-    values
-}
 
 /// Drain a boxed stream to completion, discarding values but propagating errors.
 pub(crate) async fn drain_stream_boxed(

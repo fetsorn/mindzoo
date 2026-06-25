@@ -110,60 +110,6 @@ async function describeMind({ fs, dir, federation }, mind, knownDir) {
   return recordsToMind(uuid, name, schemaRecord, branchRecords, url, token);
 }
 
-async function collectMindValues(fs, mindDir) {
-  const values = new Set();
-  const csvsDir = path.join(mindDir, "csvs");
-
-  let entries;
-
-  try {
-    entries = await fs.promises.readdir(csvsDir);
-  } catch (e) {
-    return values;
-  }
-
-  for (const name of entries) {
-    // only data tablets: must contain "-", end with ".csv", skip schema and version
-    if (
-      !name.endsWith(".csv") ||
-      !name.includes("-") ||
-      name === "_-_.csv" ||
-      name === ".csvs.csv"
-    ) {
-      continue;
-    }
-
-    let content;
-
-    try {
-      content = await fs.promises.readFile(path.join(csvsDir, name), "utf8");
-    } catch (e) {
-      continue;
-    }
-
-    for (const line of content.split("\n")) {
-      if (!line) continue;
-
-      // simple two-column CSV parse: split on first comma
-      const idx = line.indexOf(",");
-
-      if (idx === -1) continue;
-
-      const key = line.slice(0, idx).replace(/^"|"$/g, "");
-      const val = line.slice(idx + 1).replace(/^"|"$/g, "");
-
-      if (key) values.add(key);
-      if (val) values.add(val);
-    }
-  }
-
-  console.log(
-    `catalog::collectMindValues ${mindDir} => ${values.size} distinct values`,
-  );
-
-  return values;
-}
-
 async function rebuild({ fs, dir, federation }) {
   console.time("catalog::rebuild");
   console.log("catalog::rebuild start");
@@ -224,87 +170,6 @@ async function rebuild({ fs, dir, federation }) {
   console.log("catalog::rebuild settle");
   await federation.settle(dirCatalog);
   console.timeEnd("catalog::rebuild");
-}
-
-async function computeStats({ fs, dir, federation }) {
-  const dirCatalog = path.join(dir, "root");
-  const storageCatalog = csvs(fs, dirCatalog);
-
-  const minds = await fs.promises.readdir(dir);
-  const valueSets = [];
-
-  for (const mindPath of minds) {
-    if (mindPath === "root") continue;
-
-    const dirMind = path.join(dir, mindPath);
-    const storageMind = csvs(fs, dirMind);
-
-    let versionRecord;
-
-    try {
-      [versionRecord] = await Array.fromAsync(
-        storageMind.sparql({ kind: "SELECT", query: { _: "." } }),
-      );
-    } catch {
-      continue;
-    }
-
-    const uuid = versionRecord && (versionRecord.uuid ?? versionRecord.id);
-
-    if (!uuid) continue;
-
-    const values = await collectMindValues(fs, dirMind);
-    const entityCount = values.size;
-
-    // update entity_count on the existing catalog entry
-    await Array.fromAsync(
-      storageCatalog.sparql({
-        kind: "UPDATE",
-        query: { _: "mind", mind: uuid, entity_count: String(entityCount) },
-      }),
-    );
-
-    valueSets.push({ uuid, values });
-  }
-
-  // compute pairwise overlaps
-  for (let i = 0; i < valueSets.length; i++) {
-    for (let j = i + 1; j < valueSets.length; j++) {
-      let cardinality = 0;
-
-      for (const v of valueSets[i].values) {
-        if (valueSets[j].values.has(v)) cardinality++;
-      }
-
-      if (cardinality === 0) continue;
-
-      const [mindA, mindB] =
-        valueSets[i].uuid <= valueSets[j].uuid
-          ? [valueSets[i].uuid, valueSets[j].uuid]
-          : [valueSets[j].uuid, valueSets[i].uuid];
-
-      const overlapId = `${mindA}-${mindB}`;
-
-      console.log(
-        `catalog::computeStats overlap ${mindA} ∩ ${mindB} = ${cardinality}`,
-      );
-
-      await Array.fromAsync(
-        storageCatalog.sparql({
-          kind: "UPDATE",
-          query: {
-            _: "overlap",
-            overlap: overlapId,
-            mind_a: mindA,
-            mind_b: mindB,
-            cardinality: String(cardinality),
-          },
-        }),
-      );
-    }
-  }
-
-  await federation.settle(dirCatalog);
 }
 
 async function induct({ fs, dir, federation }, record) {
@@ -527,7 +392,6 @@ export default (providers) => {
     locate: (mind) => locate(providers, mind),
     retire: (mind) => retire(providers, mind),
     rebuild: () => rebuild(providers),
-    computeStats: () => computeStats(providers),
     induct: (record) => induct(providers, record),
     describe: (query) => describe(providers, query),
     merge: (mind, strategy) => merge(providers, mind, strategy),
