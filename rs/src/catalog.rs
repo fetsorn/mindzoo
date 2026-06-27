@@ -1,7 +1,7 @@
 use crate::federation::Federation;
 use crate::storage::Storage;
 use crate::{Kind, Result, Error};
-use csvs::{Entry, IntoValue};
+use csvs::Entry;
 use futures_util::StreamExt;
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -557,7 +557,7 @@ fn records_to_mind(
                 let mut v = branch_records
                     .iter()
                     .find(|br| br.base_value.as_deref() == Some(branch_name.as_str()))
-                    .map(|br| br.clone().into_value())
+                    .map(|br| br.clone().into())
                     .unwrap_or_else(|| json!({}));
 
                 // always ensure _ and branch are set
@@ -650,7 +650,7 @@ fn mind_to_records(branches: &[Entry]) -> (Value, Vec<Value>) {
         }
 
         // build meta record (branch record without trunk and leaf)
-        let mut meta = branch.clone().into_value();
+        let mut meta: Value = branch.clone().into();
         if let Value::Object(ref mut map) = meta {
             map.remove("trunk");
             map.remove("leaf");
@@ -664,7 +664,7 @@ fn mind_to_records(branches: &[Entry]) -> (Value, Vec<Value>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use csvs::{Dataset, Entry, IntoValue};
+    use csvs::{Dataset, Entry};
     use serde_json::json;
     use temp_dir::TempDir;
 
@@ -866,7 +866,7 @@ mod tests {
         let query: Entry = json!({"_": "mind", "mind": "abc123"}).try_into()?;
         let dataset = Dataset::open(&csvs_dir).await?;
         let entry = dataset.build_record_with_prose(query).await?;
-        let entry_json = entry.into_value();
+        let entry_json: Value = entry.into();
 
         let branches = entry_json.get("branch").unwrap().as_array().unwrap();
 

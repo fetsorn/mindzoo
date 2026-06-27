@@ -164,7 +164,6 @@ dependencies = [
 [[package]]
 name = "csvs"
 version = "0.4.4"
-source = "git+https://codeberg.org/fetsorn/csvs#7da56378b8354879165e19ec981559021baeba4d"
 dependencies = [
  "async-stream",
  "csv",
