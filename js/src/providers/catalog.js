@@ -263,7 +263,24 @@ async function induct({ fs, dir, federation }, record) {
 
   // gitinit add commit set remote & token
   console.log("catalog::induct settle mind");
-  await federation.settle(dirMindNew, origin);
+  const settleStatus = await federation.settle(dirMindNew, origin);
+
+  // a fresh mind with an origin is a clone request — if the remote
+  // could not be synced, roll back the scaffolding and report early
+  // instead of leaving a silent empty mind behind
+  if (isNew && origin !== undefined && settleStatus?.synced === false) {
+    try {
+      await fs.promises.rm(dirMindNew, { recursive: true });
+    } catch (e) {
+      console.log(e);
+    }
+
+    console.timeEnd("catalog::induct");
+
+    throw new Error(
+      `clone failed (${settleStatus.reason}): ${origin.url}`,
+    );
+  }
 
   // re-read uuid — may have changed after fetching from remote
   let actualUuid = mind;

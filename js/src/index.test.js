@@ -277,3 +277,104 @@ describe("catalog resilience to UUID changes after settle", () => {
     expect(dirAfterUpdate).toBeTruthy();
   });
 });
+
+describe("clone via induct", () => {
+  let storeDir;
+
+  beforeEach(() => {
+    storeDir = nodefs.mkdtempSync(path.join(os.tmpdir(), "zoo-store-"));
+  });
+
+  test("unreachable origin: induct throws early and rolls back the mind dir", async () => {
+    const throwawayUuid = "cafe1111";
+    const bogusUrl = "http://127.0.0.1:1/unreachable-repo";
+
+    const zoo = await createMindZoo({
+      fs: nodefs,
+      dir: storeDir,
+      http: nodeHttp,
+    });
+
+    // induct a fresh mind with an unreachable origin — a clone request
+    // that cannot be satisfied must report, not create a silent empty mind
+    await expect(async () => {
+      await Array.fromAsync(
+        await zoo.sparql({
+          kind: "UPDATE",
+          graph: "root",
+          query: {
+            _: "mind",
+            mind: throwawayUuid,
+            name: "cloned",
+            branch: [],
+            origin_url: {
+              _: "origin_url",
+              origin_url: bogusUrl,
+            },
+          },
+        }),
+      );
+    }).rejects.toThrow(/clone failed \(unreachable\)/);
+
+    // rollback: the scaffolded mind dir is gone, catalog can't locate it
+    const dirAfter = await zoo.catalog.locate(throwawayUuid);
+    expect(dirAfter).toBeFalsy();
+
+    // only the root catalog remains in the store
+    expect(nodefs.readdirSync(storeDir)).toEqual(["root"]);
+  });
+
+  test("successful clone: catalog adopts remote uuid, SELECT by origin_url finds it", async () => {
+    const throwawayUuid = "beef1111";
+    const remoteUuid = "beef2222";
+    const repoName = "test-clone-adopts-uuid";
+    const bareDir = createBareRepo(serverRootDir, repoName);
+    const remoteUrl = `http://127.0.0.1:${serverPort}/${repoName}`;
+
+    seedRemoteWithMind(bareDir, remoteUuid);
+
+    const zoo = await createMindZoo({
+      fs: nodefs,
+      dir: storeDir,
+      http: nodeHttp,
+    });
+
+    // induct with a throwaway uuid — the clone brings the remote uuid
+    await Array.fromAsync(
+      await zoo.sparql({
+        kind: "UPDATE",
+        graph: "root",
+        query: {
+          _: "mind",
+          mind: throwawayUuid,
+          name: "cloned",
+          branch: [],
+          origin_url: {
+            _: "origin_url",
+            origin_url: remoteUrl,
+          },
+        },
+      }),
+    );
+
+    // catalog resolves the remote uuid, not the throwaway one
+    expect(await zoo.catalog.locate(remoteUuid)).toBeTruthy();
+    expect(await zoo.catalog.locate(throwawayUuid)).toBeFalsy();
+
+    // consumers recover the actual uuid by filtering on nested origin_url
+    // (SELECT { _: "mind" } returns shallow records without origin_url)
+    const [found] = await Array.fromAsync(
+      await zoo.sparql({
+        kind: "SELECT",
+        graph: "root",
+        query: {
+          _: "mind",
+          origin_url: { _: "origin_url", origin_url: remoteUrl },
+        },
+      }),
+    );
+
+    expect(found).toBeTruthy();
+    expect(found.mind).toBe(remoteUuid);
+  });
+});

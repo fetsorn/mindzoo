@@ -374,7 +374,7 @@ async function settle(fs, http, dir, origin) {
     console.log(`${tag} local-only, commit`);
     await commit(fs, dir);
     console.timeEnd(tag);
-    return;
+    return { synced: false, reason: "local-only" };
   }
 
   // 3. remote unreachable → leave dirty files for next settle
@@ -383,7 +383,7 @@ async function settle(fs, http, dir, origin) {
   if (!reachable) {
     console.log(`${tag} unreachable, skip`);
     console.timeEnd(tag);
-    return;
+    return { synced: false, reason: "unreachable" };
   }
 
   const tokenPartial = remote.token
@@ -419,7 +419,7 @@ async function settle(fs, http, dir, origin) {
 
     await commit(fs, dir);
     console.timeEnd(tag);
-    return;
+    return { synced: false, reason: "fetch-failed" };
   }
 
   // 6. reset to remote tip (if it exists)
@@ -462,13 +462,13 @@ async function settle(fs, http, dir, origin) {
     localOid = await git.resolveRef({ fs, dir, ref: "HEAD" });
   } catch {
     console.timeEnd(tag);
-    return; // fresh repo, no commits at all
+    return { synced: true, reason: "no-commits" }; // fresh repo, no commits at all
   }
 
   if (remoteOid && localOid === remoteOid) {
     console.log(`${tag} nothing to push`);
     console.timeEnd(tag);
-    return; // nothing new to push
+    return { synced: true, reason: "up-to-date" }; // nothing new to push
   }
 
   try {
@@ -485,8 +485,11 @@ async function settle(fs, http, dir, origin) {
     console.timeEnd(`${tag} push`);
   } catch (e) {
     console.log(`${tag} push error:`, e);
+    console.timeEnd(tag);
+    return { synced: true, reason: "push-failed" };
   }
   console.timeEnd(tag);
+  return { synced: true, reason: "pushed" };
 }
 
 async function fetchRemote(fs, http, dir) {
