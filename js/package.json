@@ -2,7 +2,7 @@
   "name": "@fetsorn/mindzoo",
   "productName": "mindzoo",
   "version": "0.0.22",
-  "description": "Omnipresent decentralized data",
+  "description": "Dataset manager for csvs",
   "type": "module",
   "files": ["dist"],
   "main": "./dist/mindzoo.js",

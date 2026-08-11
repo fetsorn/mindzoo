@@ -16,11 +16,11 @@ use futures_core::stream::Stream;
 use std::path::PathBuf;
 use std::pin::Pin;
 
-/// Mindzoo maps SPARQL named graphs to csvs datasets.
+/// Mindzoo manages a directory of csvs datasets ("minds").
 ///
-/// Each named graph is a "mind" — a csvs dataset in a directory.
-/// The graph "root" is an ephemeral catalog rebuilt from the filesystem
-/// layout on startup, indexing all managed datasets.
+/// On startup it scans subdirectories, reads each dataset's schema
+/// and metadata, and builds an ephemeral "root" catalog that maps
+/// UUIDs to paths.
 ///
 /// Single entry point: `sparql(kind, graph, query)` returns a stream of entries.
 #[derive(Debug)]
