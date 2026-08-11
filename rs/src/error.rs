@@ -1,91 +1,39 @@
 use serde::{Serialize, Serializer};
-use std::{fmt, io};
+use std::fmt;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug)]
-pub struct Error {
-    inner: Box<dyn std::error::Error + Send + Sync>,
-}
-
-#[derive(Debug)]
-struct Context {
-    message: String,
-    error: Error,
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("{0}")]
+    Message(String),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Fmt(#[from] fmt::Error),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    #[error("csvs: {0}")]
+    Csvs(String),
+    #[error(transparent)]
+    Git2kit(#[from] git2kit::Error),
+    #[error(transparent)]
+    Git2(#[from] git2::Error),
 }
 
 impl Error {
     pub fn from_message(message: impl ToString) -> Self {
-        Error {
-            inner: message.to_string().into(),
-        }
-    }
-
-    pub fn with_context(error: impl Into<Self>, message: impl ToString) -> Self {
-        Self::from(Context {
-            message: message.to_string(),
-            error: error.into(),
-        })
+        Error::Message(message.to_string())
     }
 
     pub fn context(self, message: impl ToString) -> Self {
-        Error::with_context(self, message)
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Error {
-        Error { inner: err.into() }
-    }
-}
-
-impl From<fmt::Error> for Error {
-    fn from(err: fmt::Error) -> Error {
-        Error { inner: err.into() }
-    }
-}
-
-impl From<Context> for Error {
-    fn from(ctx: Context) -> Error {
-        Error { inner: ctx.into() }
-    }
-}
-
-impl From<serde_json::Error> for Error {
-    fn from(ctx: serde_json::Error) -> Error {
-        Error { inner: ctx.into() }
+        Error::Message(format!("{}: {self}", message.to_string()))
     }
 }
 
 impl From<csvs::Error> for Error {
-    fn from(ctx: csvs::Error) -> Error {
-        Error {
-            inner: ctx.to_string().into(),
-        }
-    }
-}
-
-impl From<git2kit::Error> for Error {
-    fn from(ctx: git2kit::Error) -> Error {
-        Error { inner: ctx.into() }
-    }
-}
-
-impl From<git2::Error> for Error {
-    fn from(ctx: git2::Error) -> Error {
-        Error { inner: ctx.into() }
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.inner.fmt(f)
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.inner.source()
+    fn from(e: csvs::Error) -> Self {
+        Error::Csvs(e.to_string())
     }
 }
 
@@ -103,18 +51,6 @@ impl Serialize for Error {
             message: self.to_string(),
         }
         .serialize(serializer)
-    }
-}
-
-impl fmt::Display for Context {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.message.fmt(f)
-    }
-}
-
-impl std::error::Error for Context {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&self.error)
     }
 }
 

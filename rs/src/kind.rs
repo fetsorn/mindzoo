@@ -22,7 +22,7 @@ impl FromStr for Kind {
             "INSERT" => Ok(Kind::Insert),
             "UPDATE" => Ok(Kind::Update),
             "DELETE" => Ok(Kind::Delete),
-            other => Err(Error::from_message(format!("unknown sparql kind: {other}"))),
+            other => Err(Error::from_message(format!("unknown kind: {other}"))),
         }
     }
 }
